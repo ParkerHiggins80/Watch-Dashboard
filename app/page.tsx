@@ -21,14 +21,14 @@ function DD({trigger,children,open,onClose}:any){const r=useRef<any>(null);useEf
 function DI({children,onClick,active,color}:any){return <div onClick={onClick} style={{padding:"8px 12px",borderRadius:8,cursor:"pointer",fontSize:14,color:color||C.tx,background:active?C.ac+"22":"transparent"}} onMouseEnter={(e:any)=>e.currentTarget.style.background=C.bd} onMouseLeave={(e:any)=>e.currentTarget.style.background=active?C.ac+"22":"transparent"}>{children}</div>;}
 const PCC=[C.ac,C.gn,C.rd,C.yl,C.or,"#a29bfe","#fd79a8"];
 function PerfCharts({perfData:pD,prDates:pDt,latestPerf:lP}:any){const[mode,sM]=useState("perf"),[mDd,sMD]=useState(false);
-const names=[...new Set(pD.filter((p:any)=>p.name!=="Rest").map((p:any)=>p.name))];const ss:any={};names.forEach((n:any)=>{ss[n]=pD.filter((p:any)=>p.name===n).map((p:any,i:any)=>({...p,idx:i+1}));});const ml=Math.max(...Object.values(ss).map((a:any)=>a.length));const tks:any=[];for(let i=1;i<=ml;i++)tks.push(i);
-const merged=tks.map((i:any)=>{const row:any={idx:i};names.forEach((n:any)=>{const s=ss[n];if(s[i-1]){row[n]=s[i-1].score;if(pDt[s[i-1].date])row[n+"_pr"]=true;}});return row;});
-const cumul=[{idx:0,...Object.fromEntries(names.map((n:any)=>[n,0]))},...tks.map((i:any)=>{const row:any={idx:i};names.forEach((n:any)=>{const s=ss[n];if(!s[i-1]){row[n]=null;return;}let t=0;for(let j=0;j<=i-1;j++)if(s[j])t+=s[j].score-100;row[n]=Math.round(t);});return row;})];
-const leg=names.map((n:any,i:any)=><span key={n} style={{display:"flex",alignItems:"center",gap:4,color:C.dm}}><span style={{width:10,height:10,borderRadius:5,background:PCC[i%PCC.length],display:"inline-block"}}/>{n}</span>);
-const data=mode==="perf"?merged:cumul;
-const yDom=mode==="perf"?[60,140]:undefined;
-const refY=mode==="perf"?100:0;
-const fmtTip=mode==="perf"?(v:any,n:any)=>[v+"%",n]:(v:any,n:any)=>[(v>0?"+":"")+v,n];
+const names:any=[...new Set(pD.filter((p:any)=>p.name!=="Rest").map((p:any)=>p.name))];const ss:any={};names.forEach((n:any)=>{ss[n]=pD.filter((p:any)=>p.name===n).map((p:any,i:any)=>({...p,idx:i+1}));});const ml=Math.max(...Object.values(ss).map((a:any)=>a.length));const tks:any=[];for(let i=1;i<=ml;i++)tks.push(i);
+const merged:any=tks.map((i:any)=>{const row:any={idx:i};names.forEach((n:any)=>{const s=ss[n];if(s[i-1]){row[n]=s[i-1].score;if(pDt[s[i-1].date])row[n+"_pr"]=true;}});return row;});
+const cumul:any=[{idx:0,...Object.fromEntries(names.map((n:any)=>[n,0]))},...tks.map((i:any)=>{const row:any={idx:i};names.forEach((n:any)=>{const s=ss[n];if(!s[i-1]){row[n]=null;return;}let t=0;for(let j=0;j<=i-1;j++)if(s[j])t+=s[j].score-100;row[n]=Math.round(t);});return row;})];
+const leg:any=names.map((n:any,i:any)=><span key={n} style={{display:"flex",alignItems:"center",gap:4,color:C.dm}}><span style={{width:10,height:10,borderRadius:5,background:PCC[i%PCC.length],display:"inline-block"}}/>{n}</span>);
+const data:any=mode==="perf"?merged:cumul;
+const yDom:any=mode==="perf"?[60,140]:undefined;
+const refY:any=mode==="perf"?100:0;
+const fmtTip:any=mode==="perf"?(v:any,n:any)=>[v+"%",n]:(v:any,n:any)=>[(v>0?"+":"")+v,n];
 return <><div style={CR}>
 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
 <DD open={mDd} onClose={()=>sMD(false)} trigger={<button onClick={()=>sMD(!mDd)} style={{background:"none",border:"none",color:C.tx,fontSize:15,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:6,padding:0}}>{mode==="perf"?"Performance Index":"Cumulative Growth"} <span style={{color:C.dm,fontSize:10}}>▼</span></button>}>
