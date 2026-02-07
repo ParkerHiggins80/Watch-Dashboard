@@ -18,17 +18,17 @@ const DT=[{id:"push",name:"Push Day",exercises:[{name:"Bench Press",sets:4},{nam
 const DS={Monday:"push",Tuesday:"pull",Wednesday:"rest",Thursday:"legs",Friday:"push",Saturday:"pull",Sunday:"rest"};
 
 function DD({trigger,children,open,onClose}:any){const r=useRef<any>();useEffect(()=>{if(!open)return;const h=(e:any)=>{if(r.current&&!r.current.contains(e.target))onClose();};document.addEventListener("mousedown",h);return()=>document.removeEventListener("mousedown",h);},[open,onClose]);return <div ref={r} style={{position:"relative",display:"inline-block"}}>{trigger}{open&&<div style={{position:"absolute",top:"100%",left:0,marginTop:4,zIndex:50,background:C.cd,border:`1px solid ${C.bd}`,borderRadius:10,padding:4,minWidth:220,boxShadow:"0 8px 32px rgba(0,0,0,.6)",maxHeight:300,overflowY:"auto"}}>{children}</div>}</div>;}
-function DI({children,onClick,active,color}:any){return <div onClick={onClick} style={{padding:"8px 12px",borderRadius:8,cursor:"pointer",fontSize:14,color:color||C.tx,background:active?C.ac+"22":"transparent"}} onMouseEnter={e=>e.currentTarget.style.background=C.bd} onMouseLeave={e=>e.currentTarget.style.background=active?C.ac+"22":"transparent"}>{children}</div>;}
+function DI({children,onClick,active,color}:any){return <div onClick={onClick} style={{padding:"8px 12px",borderRadius:8,cursor:"pointer",fontSize:14,color:color||C.tx,background:active?C.ac+"22":"transparent"}} onMouseEnter={(e:any)=>e.currentTarget.style.background=C.bd} onMouseLeave={(e:any)=>e.currentTarget.style.background=active?C.ac+"22":"transparent"}>{children}</div>;}
 const PCC=[C.ac,C.gn,C.rd,C.yl,C.or,"#a29bfe","#fd79a8"];
 function PerfCharts({perfData:pD,prDates:pDt,latestPerf:lP}:any){const[mode,sM]=useState("perf"),[mDd,sMD]=useState(false);
-const names=[...new Set(pD.filter(p=>p.name!=="Rest").map(p=>p.name))];const ss={};names.forEach(n=>{ss[n]=pD.filter(p=>p.name===n).map((p,i)=>({...p,idx:i+1}));});const ml=Math.max(...Object.values(ss).map(a=>a.length));const tks=[];for(let i=1;i<=ml;i++)tks.push(i);
-const merged=tks.map(i=>{const row={idx:i};names.forEach(n=>{const s=ss[n];if(s[i-1]){row[n]=s[i-1].score;if(pDt[s[i-1].date])row[n+"_pr"]=true;}});return row;});
-const cumul=[{idx:0,...Object.fromEntries(names.map(n=>[n,0]))},...tks.map(i=>{const row={idx:i};names.forEach(n=>{const s=ss[n];if(!s[i-1]){row[n]=null;return;}let t=0;for(let j=0;j<=i-1;j++)if(s[j])t+=s[j].score-100;row[n]=Math.round(t);});return row;})];
-const leg=names.map((n,i)=><span key={n} style={{display:"flex",alignItems:"center",gap:4,color:C.dm}}><span style={{width:10,height:10,borderRadius:5,background:PCC[i%PCC.length],display:"inline-block"}}/>{n}</span>);
+const names=[...new Set(pD.filter((p:any)=>p.name!=="Rest").map((p:any)=>p.name))];const ss:any={};names.forEach((n:any)=>{ss[n]=pD.filter((p:any)=>p.name===n).map((p:any,i:any)=>({...p,idx:i+1}));});const ml=Math.max(...Object.values(ss).map((a:any)=>a.length));const tks:any=[];for(let i=1;i<=ml;i++)tks.push(i);
+const merged=tks.map((i:any)=>{const row:any={idx:i};names.forEach((n:any)=>{const s=ss[n];if(s[i-1]){row[n]=s[i-1].score;if(pDt[s[i-1].date])row[n+"_pr"]=true;}});return row;});
+const cumul=[{idx:0,...Object.fromEntries(names.map((n:any)=>[n,0]))},...tks.map((i:any)=>{const row:any={idx:i};names.forEach((n:any)=>{const s=ss[n];if(!s[i-1]){row[n]=null;return;}let t=0;for(let j=0;j<=i-1;j++)if(s[j])t+=s[j].score-100;row[n]=Math.round(t);});return row;})];
+const leg=names.map((n:any,i:any)=><span key={n} style={{display:"flex",alignItems:"center",gap:4,color:C.dm}}><span style={{width:10,height:10,borderRadius:5,background:PCC[i%PCC.length],display:"inline-block"}}/>{n}</span>);
 const data=mode==="perf"?merged:cumul;
 const yDom=mode==="perf"?[60,140]:undefined;
 const refY=mode==="perf"?100:0;
-const fmtTip=mode==="perf"?(v,n)=>[v+"%",n]:(v,n)=>[(v>0?"+":"")+v,n];
+const fmtTip=mode==="perf"?(v:any,n:any)=>[v+"%",n]:(v:any,n:any)=>[(v>0?"+":"")+v,n];
 return <><div style={CR}>
 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
 <DD open={mDd} onClose={()=>sMD(false)} trigger={<button onClick={()=>sMD(!mDd)} style={{background:"none",border:"none",color:C.tx,fontSize:15,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:6,padding:0}}>{mode==="perf"?"Performance Index":"Cumulative Growth"} <span style={{color:C.dm,fontSize:10}}>▼</span></button>}>
@@ -37,7 +37,7 @@ return <><div style={CR}>
 </DD>
 </div>
 <ResponsiveContainer width="100%" height={220}><LineChart data={data}><CartesianGrid strokeDasharray="3 3" stroke={C.bd}/><XAxis dataKey="idx" tick={{fill:C.dm,fontSize:11}}/><YAxis tick={{fill:C.dm,fontSize:11}} domain={yDom}/><Tooltip contentStyle={{background:C.cd,border:`1px solid ${C.bd}`,borderRadius:8,color:C.tx,fontSize:12}} formatter={fmtTip}/><ReferenceLine y={refY} stroke={C.dm} strokeDasharray="4 4"/>
-{mode==="perf"?names.map((n,i)=><Line key={n} type="monotone" dataKey={n} stroke={PCC[i%PCC.length]} strokeWidth={2} connectNulls dot={p=>{if(p.payload[n]==null)return null;const pr=p.payload[n+"_pr"];return <circle cx={p.cx} cy={p.cy} r={pr?6:3} fill={pr?C.gd:PCC[i%PCC.length]} stroke={pr?"#fff":"none"} strokeWidth={pr?2:0}/>;}}/>):names.map((n,i)=><Line key={n} type="monotone" dataKey={n} stroke={PCC[i%PCC.length]} strokeWidth={2} dot={{fill:PCC[i%PCC.length],r:3}} connectNulls/>)}
+{mode==="perf"?names.map((n,i)=><Line key={n} type="monotone" dataKey={n} stroke={PCC[i%PCC.length]} strokeWidth={2} connectNulls dot={(p:any)=>{if(p.payload[n]==null)return null;const pr=p.payload[n+"_pr"];return <circle cx={p.cx} cy={p.cy} r={pr?6:3} fill={pr?C.gd:PCC[i%PCC.length]} stroke={pr?"#fff":"none"} strokeWidth={pr?2:0}/>;}}/>):names.map((n,i)=><Line key={n} type="monotone" dataKey={n} stroke={PCC[i%PCC.length]} strokeWidth={2} dot={{fill:PCC[i%PCC.length],r:3}} connectNulls/>)}
 </LineChart></ResponsiveContainer>
 <div style={{marginTop:12,display:"flex",gap:16,justifyContent:"center",flexWrap:"wrap",fontSize:12}}>{leg}{mode==="perf"&&<span style={{display:"flex",alignItems:"center",gap:4,color:C.dm}}><span style={{width:10,height:10,borderRadius:5,background:C.gd,display:"inline-block"}}/>PR</span>}</div>
 </div>
