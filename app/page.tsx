@@ -10,7 +10,7 @@ const DAYS=["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunda
 const vol=(ex:any)=>ex.sets.filter((s:any)=>s.type!=="warmup").reduce((t:any,s:any)=>{let v=(s.r||0)*(s.w||0);if(s.drops)s.drops.forEach((d:any)=>{v+=(d.r||0)*(d.w||0);});return t+v;},0);
 const MG={"Bench Press":"Chest","Incline DB Press":"Chest","OHP":"Shoulders","Lateral Raise":"Shoulders","Tricep Pushdown":"Triceps","Deadlift":"Back","Barbell Row":"Back","Lat Pulldown":"Back","Face Pull":"Back","Bicep Curl":"Biceps","Squat":"Quads","Leg Press":"Quads","Romanian Deadlift":"Hamstrings","Calf Raise":"Calves","Leg Curl":"Hamstrings"};
 const C={bg:"#0a0a0f",cd:"#13131d",bd:"#1e1e2e",ac:"#6c5ce7",tx:"#e2e2e8",dm:"#8888a0",gn:"#00cec9",rd:"#ff6b6b",yl:"#feca57",or:"#fdcb6e",gd:"#f9ca24",inn:"#0e0e18"};
-const B=a=>({padding:"8px 16px",borderRadius:8,border:"none",background:a?C.ac:"transparent",color:a?"#fff":C.dm,cursor:"pointer",fontSize:14,fontWeight:500});
+const B=(a:any)=>({padding:"8px 16px",borderRadius:8,border:"none",background:a?C.ac:"transparent",color:a?"#fff":C.dm,cursor:"pointer",fontSize:14,fontWeight:500});
 const CR={background:C.cd,borderRadius:12,border:`1px solid ${C.bd}`,padding:20,marginBottom:16};
 const IN={background:"#1a1a2e",border:`1px solid ${C.bd}`,borderRadius:8,padding:"8px 12px",color:C.tx,fontSize:14,outline:"none",width:"100%",boxSizing:"border-box"};
 const STS=[{id:"normal",l:"Working",c:C.tx},{id:"warmup",l:"Warm-up",c:C.yl},{id:"drop",l:"Drop Set",c:C.or}];
