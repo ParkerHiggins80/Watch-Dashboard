@@ -293,7 +293,7 @@ export default function HomePage({
     while (cursor <= end) {
       const dateStr = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}-${String(cursor.getDate()).padStart(2, "0")}`;
       const found = heatmapDays.find(d => d.date === dateStr);
-      allDays.push(found || { date: dateStr, gym: false, tasks: false });
+      allDays.push(found || { date: dateStr, gym: false });
       cursor.setDate(cursor.getDate() + 1);
     }
     return [...padStart, ...allDays, ...padEnd];
@@ -1140,7 +1140,7 @@ export default function HomePage({
                                                         }
                                                       : sess,
                                                   );
-                                                setActiveSessions(updated);
+                                                activeSessions;
                                                 setShowPendingPicker(false);
                                               }}
                                               style={{

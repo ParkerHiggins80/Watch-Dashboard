@@ -33,7 +33,7 @@ export default function App() {
   const [templates, setTemplates] = useState<any[]>(
     DEFAULT_TEMPLATES.map((t) => ({
       ...t,
-      exercises: t.exercises.map((ex) => ({ repRange: "8-12", ...ex })),
+      exercises: t.exercises.map((ex) => ({ ...ex, repRange: ex.repRange ?? "8-12" })),
     })),
   );
   const [schedule, setSchedule] =
@@ -504,14 +504,14 @@ export default function App() {
             history={history}
             templates={templates}
             schedule={schedule}
-            profileData={profileData}
+            profileData={{ ...profileData, username: (profileData as any).username ?? "", gyms: (profileData as any).gyms ?? [] }}
             setProfileData={setProfileData}
           />
         );
       case "friends":
         return (
           <FriendsPage
-            currentUser={user}
+            currentUser={{ uid: user!.uid, email: user!.email ?? "" }}
             schedule={schedule}
             templates={templates}
           />
@@ -552,7 +552,7 @@ export default function App() {
           <div style={{ fontSize: 15, color: COLORS.dim }}>
             {currentPage === "session"
               ? `${user.email}/home/log`
-              : `${profileData.username || user.email}/${currentPage}`}
+              : `${(profileData as any).username || user.email}/${currentPage}`}
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <button

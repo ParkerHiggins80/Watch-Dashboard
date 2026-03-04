@@ -135,7 +135,7 @@ function GroupSearch({ groups, selectedIds, onSelect }: {
           position: "absolute", top: "100%", left: 0, right: 0,
           background: COLORS.card, border: `1px solid ${COLORS.border}`,
           borderRadius: 8, marginTop: 4, zIndex: 10,
-          maxHeight: 4 * 37, overflowY: "auto", position: "absolute" as any,
+          maxHeight: 4 * 37, overflowY: "auto",
         }}>
           {matches.map((g, i) => (
             <div key={g.id}
