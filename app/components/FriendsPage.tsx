@@ -611,142 +611,162 @@ export default function FriendsPage({ currentUser, schedule = {}, templates = []
     </div>
   );
 
-  // ── Profile View (friend selected) ────────────────────────────────────────
-  const profileView = selectedFriend && (
-    <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 16, overflowY: "auto" }}>
-      {/* Back */}
-      <button
-        onClick={() => setSelectedFriend(null)}
-        style={{
-          alignSelf: "flex-start",
-          background: "none",
-          border: "none",
-          color: COLORS.accent,
-          cursor: "pointer",
-          fontSize: 13,
-          padding: 0,
-          fontWeight: 600,
-        }}
-      >
-        ← Back to Friends
-      </button>
+ // ── Profile View (friend selected) ────────────────────────────────────────
+  const profileView = selectedFriend && (() => {
+    const f = selectedFriend as any;
+    const pd = f.profileData || {};
+    const photo = f.photoURL || pd.photo || null;
+    const name = pd.name || f.displayName || f.email || "";
+    const username = pd.username || "@" + name.replace(/\s+/g, "").toLowerCase();
+    const bio = pd.bio || "";
+    const gyms: string[] = pd.gyms || [];
+    const friendTemplates: any[] = f.templates || [];
+    const friendSchedule: Record<string, string> = f.schedule || {};
 
-      {/* Profile header */}
-      <div style={{ ...card, display: "flex", gap: 20, flexWrap: "wrap" }}>
-        <Avatar user={selectedFriend} size={80} />
-        <div style={{ flex: 1 }}>
-          <div style={{ fontWeight: 700, fontSize: 18, marginBottom: 2 }}>
-            {selectedFriend.displayName || selectedFriend.email}
-          </div>
-          <div style={{ fontSize: 12, color: COLORS.dim, marginBottom: 4 }}>
-            @{(selectedFriend.displayName || selectedFriend.email).replace(/\s+/g, "").toLowerCase()}
-          </div>
-          {((selectedFriend as any).profileData?.bio || selectedFriend.bio) && (
-            <div style={{ fontSize: 13, marginBottom: 4 }}>{(selectedFriend as any).profileData?.bio || selectedFriend.bio}</div>
-          )}
-          <div style={{ fontSize: 12, color: COLORS.dim }}>
-            🏠 {(selectedFriend as any).profileData?.gym || selectedFriend.homeGym || "No gym listed"}
-          </div>
-          {selectedFriend.joinedDate && (
-            <div style={{ fontSize: 11, color: COLORS.dim, marginTop: 4 }}>
-              Since {new Date(selectedFriend.joinedDate).toLocaleDateString()}
+    // Build split
+    const FULL_DAYS2 = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
+    const SHORT_DAYS2 = ["MON","TUE","WED","THU","FRI","SAT","SUN"];
+    const splitDays = FULL_DAYS2.map((d, i) => {
+      const tid = friendSchedule[d];
+      const tmpl = friendTemplates.find((t: any) => t.id === tid);
+      return { day: SHORT_DAYS2[i], type: tmpl ? tmpl.name.toUpperCase().slice(0, 6) : "REST" };
+    });
+
+    // Build PRs from history stored on friend (recentPRs field)
+    const recentPRs: { exercise: string; date: string; weight: number; reps: number }[] = f.recentPRs || [];
+
+    const sectionTitle = (t: string) => (
+      <div style={{ fontSize: 20, fontWeight: 700, color: COLORS.text, marginBottom: 14 }}>{t}</div>
+    );
+
+    const cardStyle: React.CSSProperties = {
+      background: COLORS.card,
+      border: `1px solid ${COLORS.border}`,
+      borderRadius: 12,
+      padding: 16,
+    };
+
+    return (
+      <div style={{ flex: 1, overflowY: "auto" }}>
+        {/* Back button */}
+        <button
+          onClick={() => setSelectedFriend(null)}
+          style={{ background: "none", border: "none", color: COLORS.accent, cursor: "pointer", fontSize: 13, padding: "0 0 12px 0", fontWeight: 600, display: "block" }}
+        >
+          ← Back to Friends
+        </button>
+
+        <div style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
+
+          {/* ── Left Panel ── */}
+          <div style={{ width: 260, flexShrink: 0, display: "flex", flexDirection: "column", gap: 12 }}>
+
+            {/* Avatar */}
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
+              <div style={{ width: 220, height: 220, borderRadius: "50%", overflow: "hidden", border: `2px solid ${COLORS.accent}`, background: COLORS.inner, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                {photo
+                  ? <img src={photo} alt={name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                  : <span style={{ fontSize: 60, fontWeight: 700, color: "#fff" }}>{name ? name[0].toUpperCase() : "?"}</span>
+                }
+              </div>
+              {pd.joinedDate && (
+                <div style={{ fontSize: 12, color: COLORS.dim }}>Since {new Date(pd.joinedDate).toLocaleDateString()}</div>
+              )}
             </div>
-          )}
-        </div>
-      </div>
 
-      {/* Session Calendar */}
-      <div style={card}>
-        <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 10 }}>Session History</div>
-        <MiniCalendar joinedDate={selectedFriend.joinedDate} />
-      </div>
-
-      {/* Recent PRs */}
-      <div style={card}>
-        <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 10 }}>Recent PRs</div>
-        {selectedFriend.recentPRs && selectedFriend.recentPRs.length > 0 ? (
-          <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 4 }}>
-            {selectedFriend.recentPRs.map((pr, i) => (
-              <div
-                key={i}
-                style={{
-                  background: COLORS.inner,
-                  border: `1px solid ${COLORS.border}`,
-                  borderRadius: 8,
-                  padding: "8px 12px",
-                  flexShrink: 0,
-                  fontSize: 12,
-                }}
-              >
-                <div style={{ fontWeight: 600 }}>{pr.exercise}</div>
-                <div style={{ color: COLORS.dim }}>{pr.weight} lbs × {pr.reps} rep{pr.reps > 1 ? "s" : ""}</div>
-                <div style={{ color: COLORS.dim, fontSize: 11 }}>{pr.date}</div>
+            {/* Profile info */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {name && <div style={{ fontSize: 18, fontWeight: 700, color: COLORS.text }}>{name}</div>}
+              {bio && <div style={{ fontSize: 13, color: COLORS.dim, lineHeight: 1.5 }}>{bio}</div>}
+              <div style={{ marginTop: 4 }}>
+                <div style={{ fontSize: 13, color: COLORS.dim }}>{username}</div>
+                <div style={{ fontSize: 13, color: COLORS.dim }}>{f.email !== f.uid ? f.email : ""}</div>
               </div>
-            ))}
+              {gyms.filter((g: string) => g.trim()).length > 0 && (
+                <>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: COLORS.text, textTransform: "uppercase", letterSpacing: 1, marginTop: 12, textDecoration: "underline" }}>Gyms</div>
+                  {gyms.filter((g: string) => g.trim()).map((g: string, i: number) => {
+                    const parts = g.split(" — ");
+                    const gymName = parts[0];
+                    const address = parts.slice(1).join(" — ");
+                    return (
+                      <div key={i} style={{ fontSize: 13, color: COLORS.dim }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                          <span style={{ color: COLORS.text, fontWeight: 600 }}>{gymName}</span>
+                          {i === 0 && <span style={{ fontSize: 11, color: COLORS.accent, fontWeight: 700 }}>Home</span>}
+                        </div>
+                        {address && <div style={{ fontSize: 11, marginTop: 2 }}>{address}</div>}
+                      </div>
+                    );
+                  })}
+                </>
+              )}
+            </div>
           </div>
-        ) : (
-          <div style={{ fontSize: 12, color: COLORS.dim }}>No PRs recorded yet.</div>
-        )}
-      </div>
 
-      {/* My Split */}
-      {selectedFriend.split && (
-        <div style={card}>
-          <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 10 }}>Their Split</div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 4 }}>
-            {DAYS_SHORT.map((d, i) => {
-              const full = DAYS_FULL[i];
-              const val  = selectedFriend.split?.[full] || "Rest";
-              return (
-                <div key={d} style={{ textAlign: "center" }}>
-                  <div style={{ fontSize: 10, color: COLORS.dim, marginBottom: 4 }}>{d}</div>
-                  <div
-                    style={{
-                      background: COLORS.inner,
-                      border: `1px solid ${COLORS.border}`,
-                      borderRadius: 6,
-                      padding: "6px 2px",
-                      fontSize: 10,
-                      fontWeight: val !== "Rest" ? 600 : 400,
-                      color: val !== "Rest" ? COLORS.text : COLORS.dim,
-                    }}
-                  >
-                    {val}
-                  </div>
+          {/* ── Right Panel ── */}
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>
+
+            {/* Recent PRs */}
+            <div style={cardStyle}>
+              {sectionTitle("Recent PRs")}
+              {recentPRs.length > 0 ? (
+                <div style={{ display: "flex", gap: 10, overflowX: "auto", paddingBottom: 4 }}>
+                  {recentPRs.map((pr, i) => (
+                    <div key={i} style={{ background: COLORS.inner, border: `1px solid ${COLORS.border}`, borderRadius: 10, padding: "10px 14px", minWidth: 140, flexShrink: 0 }}>
+                      <div style={{ fontSize: 11, color: COLORS.dim, marginBottom: 4 }}>{pr.date}</div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: COLORS.text, marginBottom: 6 }}>{pr.exercise}</div>
+                      <div style={{ fontSize: 18, fontWeight: 800, color: COLORS.accent }}>{pr.weight} <span style={{ fontSize: 12, color: COLORS.dim }}>lbs</span></div>
+                      <div style={{ fontSize: 11, color: COLORS.dim, marginTop: 2 }}>{pr.reps} rep{pr.reps !== 1 ? "s" : ""}</div>
+                    </div>
+                  ))}
                 </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
+              ) : (
+                <div style={{ color: COLORS.dim, fontSize: 13 }}>No PRs recorded yet.</div>
+              )}
+            </div>
 
-{/* Templates */}
-      {(selectedFriend as any).templates && (selectedFriend as any).templates.length > 0 && (
-        <div style={card}>
-          <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 10 }}>My Templates</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {(selectedFriend as any).templates.map((t: any, i: number) => (
-              <div
-                key={i}
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  padding: "8px 12px",
-                  background: COLORS.inner,
-                  border: `1px solid ${COLORS.border}`,
-                  borderRadius: 8,
-                }}
-              >
-                <span style={{ fontSize: 13, fontWeight: 600 }}>{t.name}</span>
-                <span style={{ fontSize: 12, color: COLORS.dim }}>{t.exercises?.length ?? 0} exercises</span>
+            {/* Split + Templates side by side */}
+            <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+
+              {/* Split */}
+              <div style={{ ...cardStyle, flex: 1 }}>
+                {sectionTitle("Their Split")}
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  {splitDays.map(({ day, type }) => (
+                    <div key={day} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <div style={{ fontSize: 12, color: COLORS.dim, fontWeight: 600, width: 32, flexShrink: 0 }}>{day.slice(0, 3)}</div>
+                      <div style={{ fontSize: 14, fontWeight: 600, color: COLORS.text, background: COLORS.inner, borderRadius: 6, padding: "5px 10px", flex: 1, textAlign: "center" as const }}>
+                        {type.charAt(0) + type.slice(1).toLowerCase()}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
-            ))}
+
+              {/* Templates */}
+              <div style={{ ...cardStyle, flex: 2, maxHeight: 340, boxSizing: "border-box" as const, display: "flex", flexDirection: "column" }}>
+                {sectionTitle("Their Templates")}
+                {friendTemplates.filter((t: any) => t.name?.toLowerCase() !== "rest" && (t.exercises?.length ?? 0) > 0).length > 0 ? (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8, overflowY: "auto", flex: 1 }}>
+                    {friendTemplates.filter((t: any) => t.name?.toLowerCase() !== "rest" && (t.exercises?.length ?? 0) > 0).map((t: any, i: number) => (
+                      <div key={i} style={{ background: COLORS.inner, borderRadius: 10, border: `1px solid ${COLORS.border}`, padding: "10px 14px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <span style={{ fontSize: 13, fontWeight: 700 }}>{t.name}</span>
+                        <span style={{ fontSize: 12, color: COLORS.dim }}>{t.exercises?.length ?? 0} exercises</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ color: COLORS.dim, fontSize: 13 }}>No templates yet.</div>
+                )}
+              </div>
+
+            </div>
           </div>
         </div>
-      )}
-    </div>
-  );
+      </div>
+    );
+  })();
 
   // ── Page Layout ────────────────────────────────────────────────────────────
   return (
