@@ -175,6 +175,72 @@ function MiniCalendar({ joinedDate }: { joinedDate?: string }) {
   );
 }
 
+// ── Activity Grid (same as ProfilePage) ──────────────────────────────────────
+
+function ActivityGrid({ history }: { history: any[] }) {
+  const getHeatmapDays = () => {
+    const today = new Date();
+    const year = today.getFullYear();
+    const days: { date: string; gym: boolean }[] = [];
+    const cursor = new Date(year, 0, 1);
+    while (cursor <= today) {
+      const dateStr = `${cursor.getFullYear()}-${String(cursor.getMonth()+1).padStart(2,"0")}-${String(cursor.getDate()).padStart(2,"0")}`;
+      days.push({ date: dateStr, gym: history.some(w => w.date === dateStr) });
+      cursor.setDate(cursor.getDate() + 1);
+    }
+    return days;
+  };
+  const heatmapDays = getHeatmapDays();
+  const year = new Date().getFullYear();
+  const jan1 = new Date(year, 0, 1);
+  const dec31 = new Date(year, 11, 31);
+  const padStart = Array(jan1.getDay()).fill(null);
+  const padEnd = Array(dec31.getDay() < 6 ? 6 - dec31.getDay() : 0).fill(null);
+  const allDays: any[] = [];
+  const cursor2 = new Date(year, 0, 1);
+  while (cursor2 <= dec31) {
+    const dateStr = `${cursor2.getFullYear()}-${String(cursor2.getMonth()+1).padStart(2,"0")}-${String(cursor2.getDate()).padStart(2,"0")}`;
+    const found = heatmapDays.find(d => d.date === dateStr);
+    allDays.push(found || { date: dateStr, gym: false });
+    cursor2.setDate(cursor2.getDate() + 1);
+  }
+  const grid = [...padStart, ...allDays, ...padEnd];
+  const totalWeeks = Math.ceil(grid.length / 7);
+  const rows = Array.from({ length: 7 }, (_, row) =>
+    Array.from({ length: totalWeeks }, (_, col) => grid[col * 7 + row] ?? null)
+  );
+  const MONTHS2 = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  const monthCols: { label: string; col: number }[] = [];
+  MONTHS2.forEach((m, mi) => {
+    for (let col = 0; col < totalWeeks; col++) {
+      const cell = rows[0][col] || rows[1][col];
+      if (cell) {
+        const d = new Date(cell.date + "T12:00:00");
+        if (d.getMonth() === mi && d.getDate() <= 7) { monthCols.push({ label: m, col }); break; }
+      }
+    }
+  });
+  const DOW = ["Sun","","Tue","","Thu","","Sat"];
+  return (
+    <div style={{ width: "100%" }}>
+      <div style={{ display: "flex", marginLeft: 28, marginBottom: 3 }}>
+        {Array.from({ length: totalWeeks }, (_, col) => {
+          const month = monthCols.find(mc => mc.col === col);
+          return <div key={col} style={{ flex: 1, fontSize: 9, color: COLORS.text, overflow: "visible", whiteSpace: "nowrap" }}>{month ? month.label : ""}</div>;
+        })}
+      </div>
+      {rows.map((row, ri) => (
+        <div key={ri} style={{ display: "flex", alignItems: "center", marginBottom: 2 }}>
+          <div style={{ width: 24, fontSize: 9, color: COLORS.text, textAlign: "right", paddingRight: 4, flexShrink: 0 }}>{DOW[ri]}</div>
+          {row.map((cell, ci) => (
+            <div key={ci} style={{ flex: 1, aspectRatio: "1", borderRadius: 2, background: !cell ? "transparent" : cell.gym ? "#1d4ed8" : COLORS.inner, border: !cell ? "none" : `1px solid ${COLORS.border}`, marginRight: 2 }} />
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ── Activity Card ─────────────────────────────────────────────────────────────
 
 function ActivityCard({
@@ -238,6 +304,22 @@ export default function FriendsPage({ currentUser, schedule = {}, templates = []
   const [selectedFriend, setSelectedFriend] = useState<UserProfile | null>(null);
   const [search,        setSearch]        = useState("");
   const [loading,       setLoading]       = useState(true);
+  const [friendHistory, setFriendHistory] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (!selectedFriend) return;
+    async function loadFriendHistory() {
+      try {
+        const { collection: col, getDocs: gd } = await import("firebase/firestore");
+        const snap = await gd(col(db, "users", selectedFriend!.uid, "workouts"));
+        const loaded = snap.docs.map(d => d.data());
+        setFriendHistory(loaded);
+      } catch (e) {
+        setFriendHistory([]);
+      }
+    }
+    loadFriendHistory();
+  }, [selectedFriend]);
 
   // Plan a Session state
   const [planTemplate, setPlanTemplate]   = useState(templates[0]?.name ?? "");
@@ -706,6 +788,12 @@ export default function FriendsPage({ currentUser, schedule = {}, templates = []
 
           {/* ── Right Panel ── */}
           <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>
+
+            {/* Activity */}
+            <div style={cardStyle}>
+              {sectionTitle(`${new Date().getFullYear()} Activity`)}
+              <ActivityGrid history={friendHistory} />
+            </div>
 
             {/* Recent PRs */}
             <div style={cardStyle}>
