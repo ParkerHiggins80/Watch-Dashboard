@@ -59,9 +59,10 @@ function buildAlphaGroups(users: UserProfile[]) {
 
 function Avatar({ user, size = 40 }: { user: UserProfile; size?: number }) {
   const name = user.displayName || user.email;
-  return user.photoURL ? (
+  const photo = user.photoURL || (user as any).profileData?.photo;
+  return photo ? (
     <img
-      src={user.photoURL}
+      src={photo}
       alt={name}
       style={{ width: size, height: size, borderRadius: "50%", objectFit: "cover" }}
     />
@@ -640,11 +641,11 @@ export default function FriendsPage({ currentUser, schedule = {}, templates = []
           <div style={{ fontSize: 12, color: COLORS.dim, marginBottom: 4 }}>
             @{(selectedFriend.displayName || selectedFriend.email).replace(/\s+/g, "").toLowerCase()}
           </div>
-          {selectedFriend.bio && (
-            <div style={{ fontSize: 13, marginBottom: 4 }}>{selectedFriend.bio}</div>
+          {((selectedFriend as any).profileData?.bio || selectedFriend.bio) && (
+            <div style={{ fontSize: 13, marginBottom: 4 }}>{(selectedFriend as any).profileData?.bio || selectedFriend.bio}</div>
           )}
           <div style={{ fontSize: 12, color: COLORS.dim }}>
-            🏠 {selectedFriend.homeGym || "No gym listed"}
+            🏠 {(selectedFriend as any).profileData?.gym || selectedFriend.homeGym || "No gym listed"}
           </div>
           {selectedFriend.joinedDate && (
             <div style={{ fontSize: 11, color: COLORS.dim, marginTop: 4 }}>
@@ -719,12 +720,12 @@ export default function FriendsPage({ currentUser, schedule = {}, templates = []
         </div>
       )}
 
-      {/* Templates */}
-      {selectedFriend.templates && selectedFriend.templates.length > 0 && (
+{/* Templates */}
+      {(selectedFriend as any).templates && (selectedFriend as any).templates.length > 0 && (
         <div style={card}>
           <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 10 }}>My Templates</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {selectedFriend.templates.map((t, i) => (
+            {(selectedFriend as any).templates.map((t: any, i: number) => (
               <div
                 key={i}
                 style={{
@@ -738,7 +739,7 @@ export default function FriendsPage({ currentUser, schedule = {}, templates = []
                 }}
               >
                 <span style={{ fontSize: 13, fontWeight: 600 }}>{t.name}</span>
-                <span style={{ fontSize: 12, color: COLORS.dim }}>{t.exerciseCount} exercises</span>
+                <span style={{ fontSize: 12, color: COLORS.dim }}>{t.exercises?.length ?? 0} exercises</span>
               </div>
             ))}
           </div>
