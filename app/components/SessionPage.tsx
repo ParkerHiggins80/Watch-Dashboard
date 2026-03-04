@@ -1,0 +1,1556 @@
+"use client";
+import { useState, useEffect, useMemo } from "react";
+import { COLORS, SET_TYPES } from "../constants";
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+  CartesianGrid,
+} from "recharts";
+
+interface SessionPageProps {
+  session: any;
+  setSession: (session: any) => void;
+  onFinish: (session: any) => void;
+  onSaveAndReturn: () => void;
+  onCancel: () => void;
+  history: any[];
+}
+
+export default function SessionPage({
+  session,
+  setSession,
+  onFinish,
+  onSaveAndReturn,
+  onCancel,
+  history,
+}: SessionPageProps) {
+  const [currentExerciseIndex, setCurrentExerciseIndex] = useState(0);
+  const [currentSetIndex, setCurrentSetIndex] = useState(0);
+  const [windowWidth, setWindowWidth] = useState(1200);
+  const [windowHeight, setWindowHeight] = useState(800);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [touchedSets, setTouchedSets] = useState<Record<string, boolean>>(
+    () => {
+      const initial: Record<string, boolean> = {};
+      (session.exercises || []).forEach((ex: any, ei: number) => {
+        (ex.sets || []).forEach((s: any, si: number) => {
+          if (s._touched) {
+            initial[`${ei}-${si}`] = true;
+          }
+        });
+      });
+      return initial;
+    },
+  );
+  const [mobileBottomTab, setMobileBottomTab] = useState<
+    "previous" | "alltime"
+  >("previous");
+
+  useEffect(() => {
+    const handleResize = () => {
+      setWindowWidth(window.innerWidth);
+      setWindowHeight(window.innerHeight);
+    };
+    handleResize();
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  const isMobile = windowWidth < 768;
+  const safeExIdx = Math.min(
+    currentExerciseIndex,
+    (session.exercises?.length ?? 1) - 1,
+  );
+  const exercise = session.exercises?.[safeExIdx] ?? {
+    name: "",
+    sets: [{ weight: 0, reps: 0, type: "normal" }],
+  };
+  const currentSet = exercise.sets?.[currentSetIndex] ?? {
+    weight: 0,
+    reps: 0,
+    type: "normal",
+  };
+  const totalSets = exercise.sets.length;
+
+  const touchedKey = `${currentExerciseIndex}-${currentSetIndex}`;
+  const isTouched = !!touchedSets[touchedKey];
+
+  useEffect(() => {
+    setCurrentSetIndex(0);
+  }, [currentExerciseIndex]);
+
+  // ─── Previous workout data ───
+  const getPreviousWorkout = (exerciseName: string) => {
+    const sorted = [...history].sort((a: any, b: any) =>
+      b.date.localeCompare(a.date),
+    );
+    for (const workout of sorted) {
+      const found = workout.exercises.find((e: any) => e.name === exerciseName);
+      if (found) {
+        return {
+          date: workout.date,
+          sets: found.sets.filter((s: any) => s.type !== "warmup"),
+        };
+      }
+    }
+    return null;
+  };
+
+  const previousWorkout = getPreviousWorkout(exercise.name);
+
+  // ─── Previous top set ───
+  const previousTopSet = useMemo(() => {
+    if (!previousWorkout) return null;
+    let best = { weight: 0, reps: 0 };
+    for (const s of previousWorkout.sets) {
+      if (
+        s.weight > best.weight ||
+        (s.weight === best.weight && s.reps > best.reps)
+      ) {
+        best = { weight: s.weight, reps: s.reps };
+      }
+    }
+    return { ...best, date: previousWorkout.date };
+  }, [previousWorkout]);
+
+  // ─── Pre-fill sets from previous workout (only for brand new sessions) ───
+  useEffect(() => {
+    if (!previousWorkout) return;
+    if (!session.exercises?.[currentExerciseIndex]?.sets) return;
+    // Don't pre-fill if this exercise already has any user data saved
+    const hasAnyData = session.exercises[currentExerciseIndex].sets.some(
+      (s: any) => s.weight > 0 || s.reps > 0,
+    );
+    if (hasAnyData) return;
+    const updated = { ...session };
+    updated.exercises = [...updated.exercises];
+    const ex = { ...updated.exercises[currentExerciseIndex] };
+    let changed = false;
+    ex.sets = ex.sets.map((s: any, i: number) => {
+      if (s.weight === 0 && s.reps === 0 && previousWorkout.sets[i]) {
+        changed = true;
+        return {
+          ...s,
+          weight: Math.round(previousWorkout.sets[i].weight / 2.5) * 2.5,
+          reps: Math.round(previousWorkout.sets[i].reps),
+        };
+      }
+      return s;
+    });
+    if (changed) {
+      updated.exercises[currentExerciseIndex] = ex;
+      setSession(updated);
+    }
+  }, [currentExerciseIndex, previousWorkout?.date]);
+
+  // ─── Chart data ───
+  const chartData = useMemo(() => {
+    const points: { date: string; label: string; weight: number }[] = [];
+    const sorted = [...history].sort((a: any, b: any) =>
+      a.date.localeCompare(b.date),
+    );
+    for (const workout of sorted) {
+      const found = workout.exercises.find(
+        (e: any) => e.name === exercise.name,
+      );
+      if (found) {
+        const workingSets = found.sets.filter(
+          (s: any) => s.type !== "warmup" && s.weight > 0,
+        );
+        if (workingSets.length > 0) {
+          const maxWeight = Math.max(...workingSets.map((s: any) => s.weight));
+          const d = new Date(workout.date + "T12:00:00");
+          points.push({
+            date: workout.date,
+            label: d.toLocaleDateString("en-US", {
+              month: "short",
+              day: "numeric",
+            }),
+            weight: maxWeight,
+          });
+        }
+      }
+    }
+    return points;
+  }, [history, exercise.name]);
+
+  // ─── Set operations ───
+  const markTouched = (exIdx: number, setIdx: number) => {
+    const key = `${exIdx}-${setIdx}`;
+    if (!touchedSets[key]) {
+      setTouchedSets((prev) => ({ ...prev, [key]: true }));
+      const updatedExercises = session.exercises.map((ex: any, ei: number) =>
+        ei !== exIdx
+          ? ex
+          : {
+              ...ex,
+              sets: ex.sets.map((s: any, si: number) =>
+                si !== setIdx ? s : { ...s, _touched: true },
+              ),
+            },
+      );
+      setSession({ ...session, exercises: updatedExercises });
+    }
+  };
+
+  const updateSet = (setIndex: number, field: string, value: any) => {
+    const key = `${currentExerciseIndex}-${setIndex}`;
+    setTouchedSets((prev) => ({ ...prev, [key]: true }));
+    const updatedExercises = session.exercises.map((ex: any, ei: number) =>
+      ei !== currentExerciseIndex
+        ? ex
+        : {
+            ...ex,
+            sets: ex.sets.map((s: any, i: number) =>
+              i === setIndex ? { ...s, [field]: value, _touched: true } : s,
+            ),
+          },
+    );
+    setSession({ ...session, exercises: updatedExercises });
+  };
+
+  const adjustWeight = (delta: number) => {
+    const current = currentSet?.weight || 0;
+    const newVal = Math.max(0, Math.round((current + delta) / 2.5) * 2.5);
+    updateSet(currentSetIndex, "weight", newVal);
+  };
+
+  const adjustReps = (delta: number) => {
+    const current = currentSet?.reps || 0;
+    const newVal = Math.max(0, Math.round(current + delta));
+    updateSet(currentSetIndex, "reps", newVal);
+  };
+
+  const addSet = () => {
+    const updated = { ...session };
+    updated.exercises = [...updated.exercises];
+    const lastSet = exercise.sets[exercise.sets.length - 1] || {
+      weight: 0,
+      reps: 0,
+      type: "normal",
+    };
+    updated.exercises[currentExerciseIndex] = {
+      ...updated.exercises[currentExerciseIndex],
+      sets: [
+        ...exercise.sets,
+        { weight: lastSet.weight, reps: lastSet.reps, type: "normal" },
+      ],
+    };
+    setSession(updated);
+  };
+
+  const removeCurrentSet = () => {
+    if (exercise.sets.length <= 1) return;
+    const updated = { ...session };
+    updated.exercises = [...updated.exercises];
+    updated.exercises[currentExerciseIndex] = {
+      ...updated.exercises[currentExerciseIndex],
+      sets: exercise.sets.filter((_: any, i: number) => i !== currentSetIndex),
+    };
+    setSession(updated);
+    if (currentSetIndex >= exercise.sets.length - 1) {
+      setCurrentSetIndex(Math.max(0, currentSetIndex - 1));
+    }
+  };
+
+  const removeExercise = (index: number) => {
+    if (session.exercises.length <= 1) return;
+    const updated = { ...session };
+    updated.exercises = updated.exercises.filter(
+      (_: any, i: number) => i !== index,
+    );
+    setSession(updated);
+    if (currentExerciseIndex >= updated.exercises.length) {
+      setCurrentExerciseIndex(updated.exercises.length - 1);
+    } else if (index < currentExerciseIndex) {
+      setCurrentExerciseIndex(currentExerciseIndex - 1);
+    }
+  };
+
+  const formatPrevDate = (dateStr: string) => {
+    const d = new Date(dateStr + "T12:00:00");
+    const month = d.getMonth() + 1;
+    const day = d.getDate();
+    const year = d.getFullYear().toString().slice(2);
+    return `${month}/${day}/${year}`;
+  };
+
+  // ─── Styles ───
+  const cardStyle = {
+    background: COLORS.card,
+    borderRadius: 12,
+    padding: isMobile ? 12 : 14,
+    border: `1px solid ${COLORS.border}`,
+  };
+
+  const btnStyle = (active: boolean, color?: string) => ({
+    padding: isMobile ? "8px 12px" : "8px 16px",
+    borderRadius: 8,
+    border: active ? "none" : `1px solid ${COLORS.border}`,
+    background: active ? color || COLORS.accent : "transparent",
+    color: active ? "#fff" : COLORS.dim,
+    cursor: "pointer",
+    fontWeight: 600 as const,
+    fontSize: isMobile ? 12 : 13,
+  });
+
+  const arrowBtn: any = {
+    background: COLORS.inner,
+    border: `1px solid ${COLORS.border}`,
+    borderRadius: 6,
+    color: COLORS.text,
+    cursor: "pointer",
+    fontSize: 12,
+    width: "100%",
+    padding: "3px 0",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+  };
+
+  const contentHeight = windowHeight - 160;
+
+  // ─── Previous / All Time content (shared between mobile and desktop) ───
+  const renderPreviousContent = () =>
+    previousWorkout ? (
+      <>
+        <div style={{ fontSize: 13, color: COLORS.dim, marginBottom: 4 }}>
+          <span style={{ fontWeight: 600, color: COLORS.text }}>Previous</span>{" "}
+          ({formatPrevDate(previousWorkout.date)})
+        </div>
+        <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 10 }}>
+          {exercise.name}
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+          {previousWorkout.sets.map((s: any, i: number) => (
+            <div
+              key={i}
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                padding: "6px 10px",
+                background: COLORS.card,
+                borderRadius: 6,
+                border: `1px solid ${COLORS.border}`,
+                fontSize: 13,
+              }}
+            >
+              <span style={{ textAlign: "center" }}>
+                Weight: <span style={{ fontWeight: 600 }}>{s.weight}</span> lbs
+              </span>
+              <span style={{ textAlign: "center" }}>
+                Reps: <span style={{ fontWeight: 600 }}>{s.reps}</span>
+              </span>
+            </div>
+          ))}
+        </div>
+      </>
+    ) : (
+      <div
+        style={{
+          color: COLORS.dim,
+          fontSize: 13,
+          textAlign: "center",
+          padding: "16px 0",
+        }}
+      >
+        No previous data for {exercise.name}
+      </div>
+    );
+
+  const renderChartContent = () => (
+    <>
+      <h3
+        style={{
+          fontSize: 14,
+          fontWeight: 600,
+          margin: "0 0 8px",
+          color: COLORS.dim,
+        }}
+      >
+        All Time — {exercise.name}
+      </h3>
+      {chartData.length > 0 ? (
+        <ResponsiveContainer width="100%" height={isMobile ? 160 : 140}>
+          <LineChart data={chartData}>
+            <CartesianGrid strokeDasharray="3 3" stroke={COLORS.border} />
+            <XAxis
+              dataKey="label"
+              tick={{ fill: COLORS.dim, fontSize: 10 }}
+              stroke={COLORS.border}
+            />
+            <YAxis
+              tick={{ fill: COLORS.dim, fontSize: 10 }}
+              stroke={COLORS.border}
+              domain={["dataMin - 10", "dataMax + 10"]}
+            />
+            <Tooltip
+              contentStyle={{
+                background: COLORS.card,
+                border: `1px solid ${COLORS.border}`,
+                borderRadius: 8,
+                color: COLORS.text,
+                fontSize: 12,
+              }}
+              formatter={(v: any) => [`${v} lbs`, "Max Weight"]}
+            />
+            <Line
+              type="monotone"
+              dataKey="weight"
+              stroke={COLORS.accent}
+              strokeWidth={2}
+              dot={{ fill: COLORS.accent, r: 3 }}
+              activeDot={{ r: 5, fill: COLORS.green }}
+            />
+          </LineChart>
+        </ResponsiveContainer>
+      ) : (
+        <div
+          style={{
+            textAlign: "center",
+            color: COLORS.dim,
+            padding: "30px 0",
+            fontSize: 13,
+          }}
+        >
+          No previous data for {exercise.name}.
+        </div>
+      )}
+    </>
+  );
+
+  // ═══════════════════════════════════
+  // ═══ MOBILE LAYOUT ═══
+  // ═══════════════════════════════════
+  if (isMobile) {
+    return (
+      <div>
+        {/* Top Buttons */}
+        <div
+          style={{
+            display: "flex",
+            gap: 6,
+            marginBottom: 12,
+            flexWrap: "wrap",
+            justifyContent: "flex-end",
+          }}
+        >
+          <button
+            onClick={() => onFinish(session)}
+            style={{
+              padding: "7px 12px",
+              borderRadius: 8,
+              border: "none",
+              background: COLORS.green,
+              color: "#fff",
+              cursor: "pointer",
+              fontWeight: 700,
+              fontSize: 12,
+            }}
+          >
+            Finish
+          </button>
+          <button
+            onClick={() => onSaveAndReturn()}
+            style={{
+              padding: "7px 12px",
+              borderRadius: 8,
+              border: "none",
+              background: COLORS.accent,
+              color: "#fff",
+              cursor: "pointer",
+              fontWeight: 600,
+              fontSize: 12,
+            }}
+          >
+            Save & Home
+          </button>
+          <button
+            onClick={() => setShowDeleteConfirm(true)}
+            style={{
+              padding: "7px 12px",
+              borderRadius: 8,
+              border: `1px solid ${COLORS.red}`,
+              background: "transparent",
+              color: COLORS.red,
+              cursor: "pointer",
+              fontWeight: 600,
+              fontSize: 12,
+            }}
+          >
+            Delete
+          </button>
+        </div>
+
+        {/* Main Card */}
+        <div style={cardStyle}>
+          {/* Today + Date */}
+          <div style={{ color: COLORS.dim, fontSize: 13 }}>
+            <span style={{ fontWeight: 600, color: COLORS.text }}>Today</span> (
+            {session.date})
+          </div>
+
+          {/* Push Day + Horizontal Exercise Scroll */}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              marginTop: 8,
+              marginBottom: 8,
+            }}
+          >
+            <div
+              style={{
+                padding: "6px 12px",
+                background: COLORS.inner,
+                borderRadius: 8,
+                fontWeight: 700,
+                fontSize: 14,
+                border: `1px solid ${COLORS.border}`,
+                whiteSpace: "nowrap",
+                flexShrink: 0,
+              }}
+            >
+              {session.name}
+            </div>
+            <div
+              onMouseDown={(e: any) => {
+                const el = e.currentTarget;
+                el.dataset.dragging = "true";
+                el.dataset.startX = e.pageX;
+                el.dataset.scrollLeft = el.scrollLeft;
+              }}
+              onMouseMove={(e: any) => {
+                const el = e.currentTarget;
+                if (el.dataset.dragging !== "true") return;
+                e.preventDefault();
+                const dx = e.pageX - Number(el.dataset.startX);
+                el.scrollLeft = Number(el.dataset.scrollLeft) - dx;
+              }}
+              onMouseUp={(e: any) => {
+                e.currentTarget.dataset.dragging = "false";
+              }}
+              onMouseLeave={(e: any) => {
+                e.currentTarget.dataset.dragging = "false";
+              }}
+              style={{
+                display: "flex",
+                gap: 6,
+                overflowX: "auto",
+                flex: 1,
+                paddingBottom: 4,
+                msOverflowStyle: "none",
+                scrollbarWidth: "none",
+                cursor: "grab",
+                userSelect: "none",
+              }}
+            >
+              {session.exercises.map((ex: any, i: number) => {
+                const isActive = i === currentExerciseIndex;
+                const allTouched = ex.sets.every(
+                  (_: any, si: number) => touchedSets[`${i}-${si}`],
+                );
+                return (
+                  <button
+                    key={i}
+                    onClick={() => setCurrentExerciseIndex(i)}
+                    style={{
+                      padding: "6px 14px",
+                      borderRadius: 20,
+                      border: isActive
+                        ? `2px solid ${COLORS.accent}`
+                        : `1px solid ${COLORS.border}`,
+                      background: isActive
+                        ? COLORS.accent + "22"
+                        : "transparent",
+                      color: allTouched
+                        ? COLORS.green
+                        : isActive
+                          ? COLORS.text
+                          : COLORS.dim,
+                      cursor: "pointer",
+                      fontSize: 12,
+                      fontWeight: isActive ? 600 : 400,
+                      whiteSpace: "nowrap",
+                      flexShrink: 0,
+                    }}
+                  >
+                    {ex.name}
+                  </button>
+                );
+              })}
+              <button
+                onClick={() => {
+                  const updated = { ...session };
+                  updated.exercises = [
+                    ...updated.exercises,
+                    {
+                      name: "New Exercise",
+                      sets: [{ weight: 0, reps: 0, type: "normal" }],
+                    },
+                  ];
+                  setSession(updated);
+                  setCurrentExerciseIndex(updated.exercises.length - 1);
+                }}
+                style={{
+                  padding: "6px 14px",
+                  borderRadius: 20,
+                  border: `1px dashed ${COLORS.border}`,
+                  background: "transparent",
+                  color: COLORS.dim,
+                  cursor: "pointer",
+                  fontSize: 12,
+                  whiteSpace: "nowrap",
+                  flexShrink: 0,
+                }}
+              >
+                + Add
+              </button>
+            </div>
+          </div>
+
+          {/* Exercise Name */}
+          <h2
+            style={{
+              fontSize: 20,
+              fontWeight: 700,
+              margin: "0 0 2px",
+              textDecoration: "underline",
+              textDecorationColor: COLORS.accent,
+              textUnderlineOffset: 4,
+            }}
+          >
+            {exercise.name}
+          </h2>
+          <div
+            style={{
+              fontSize: 15,
+              fontWeight: 600,
+              color: COLORS.accent,
+              marginBottom: 8,
+              textAlign: "center",
+            }}
+          >
+            Set: {currentSetIndex + 1} of {totalSets}
+          </div>
+
+          {/* Previous Top Set */}
+          {previousTopSet && (
+            <div
+              style={{
+                padding: "6px 10px",
+                background: COLORS.inner,
+                borderRadius: 8,
+                border: `1px solid ${COLORS.border}`,
+                fontSize: 12,
+                color: COLORS.dim,
+                textAlign: "center",
+                marginBottom: 10,
+              }}
+            >
+              <span style={{ fontWeight: 600, color: COLORS.text }}>
+                Previous Top Set
+              </span>{" "}
+              ({formatPrevDate(previousTopSet.date)}):{" "}
+              <span style={{ color: COLORS.text, fontWeight: 600 }}>
+                {previousTopSet.weight}
+              </span>{" "}
+              lbs ×{" "}
+              <span style={{ color: COLORS.text, fontWeight: 600 }}>
+                {previousTopSet.reps}
+              </span>{" "}
+              reps
+            </div>
+          )}
+
+          {/* Weight + Reps */}
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "center",
+              gap: 24,
+              marginBottom: 10,
+              alignItems: "center",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span
+                style={{ fontSize: 15, color: COLORS.dim, fontWeight: 600 }}
+              >
+                Weight
+              </span>
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 3,
+                  width: 80,
+                }}
+              >
+                <button onClick={() => adjustWeight(2.5)} style={arrowBtn}>
+                  ▲
+                </button>
+                <input
+                  type="number"
+                  step="2.5"
+                  style={{
+                    width: "100%",
+                    padding: "8px 4px",
+                    border: `1px solid ${COLORS.border}`,
+                    borderRadius: 8,
+                    background: COLORS.inner,
+                    color: isTouched ? COLORS.text : COLORS.dim,
+                    outline: "none",
+                    fontSize: 18,
+                    textAlign: "center" as const,
+                    fontWeight: 600,
+                    boxSizing: "border-box" as const,
+                  }}
+                  value={currentSet?.weight || ""}
+                  placeholder="0"
+                  onFocus={() =>
+                    markTouched(currentExerciseIndex, currentSetIndex)
+                  }
+                  onChange={(e: any) =>
+                    updateSet(currentSetIndex, "weight", Number(e.target.value))
+                  }
+                  onBlur={(e: any) => {
+                    const rounded =
+                      Math.round(Number(e.target.value) / 2.5) * 2.5;
+                    updateSet(currentSetIndex, "weight", rounded);
+                  }}
+                />
+                <button onClick={() => adjustWeight(-2.5)} style={arrowBtn}>
+                  ▼
+                </button>
+              </div>
+              <span
+                style={{ fontSize: 13, color: COLORS.dim, fontWeight: 600 }}
+              >
+                lbs
+              </span>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span
+                style={{ fontSize: 15, color: COLORS.dim, fontWeight: 600 }}
+              >
+                Reps
+              </span>
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 3,
+                  width: 80,
+                }}
+              >
+                <button onClick={() => adjustReps(1)} style={arrowBtn}>
+                  ▲
+                </button>
+                <input
+                  type="number"
+                  step="1"
+                  style={{
+                    width: "100%",
+                    padding: "8px 4px",
+                    border: `1px solid ${COLORS.border}`,
+                    borderRadius: 8,
+                    background: COLORS.inner,
+                    color: isTouched ? COLORS.text : COLORS.dim,
+                    outline: "none",
+                    fontSize: 18,
+                    textAlign: "center" as const,
+                    fontWeight: 600,
+                    boxSizing: "border-box" as const,
+                  }}
+                  value={currentSet?.reps || ""}
+                  placeholder="0"
+                  onFocus={() =>
+                    markTouched(currentExerciseIndex, currentSetIndex)
+                  }
+                  onChange={(e: any) =>
+                    updateSet(currentSetIndex, "reps", Number(e.target.value))
+                  }
+                  onBlur={(e: any) => {
+                    const rounded = Math.max(
+                      0,
+                      Math.round(Number(e.target.value)),
+                    );
+                    updateSet(currentSetIndex, "reps", rounded);
+                  }}
+                />
+                <button onClick={() => adjustReps(-1)} style={arrowBtn}>
+                  ▼
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Buttons */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <button
+              onClick={() => {
+                if (exercise.sets.length <= 1)
+                  removeExercise(currentExerciseIndex);
+                else removeCurrentSet();
+              }}
+              style={{
+                ...btnStyle(false),
+                color: COLORS.red,
+                borderColor: COLORS.red,
+              }}
+            >
+              {exercise.sets.length <= 1 ? "Remove Workout" : "Remove Set"}
+            </button>
+            <div style={{ display: "flex", gap: 6 }}>
+              <button
+                onClick={() =>
+                  setCurrentSetIndex(Math.max(0, currentSetIndex - 1))
+                }
+                disabled={currentSetIndex === 0}
+                style={{
+                  ...btnStyle(false),
+                  flex: 1,
+                  opacity: currentSetIndex === 0 ? 0.4 : 1,
+                }}
+              >
+                Previous Set
+              </button>
+              <button
+                onClick={() => {
+                  if (currentSetIndex === totalSets - 1) {
+                    addSet();
+                    setCurrentSetIndex(currentSetIndex + 1);
+                  } else setCurrentSetIndex(currentSetIndex + 1);
+                }}
+                style={{ ...btnStyle(true), flex: 1 }}
+              >
+                {currentSetIndex === totalSets - 1 ? "+ Add Set" : "Next Set"}
+              </button>
+            </div>
+            <div style={{ display: "flex", gap: 6 }}>
+              <button
+                onClick={() =>
+                  setCurrentExerciseIndex(Math.max(0, currentExerciseIndex - 1))
+                }
+                disabled={currentExerciseIndex === 0}
+                style={{
+                  ...btnStyle(false),
+                  flex: 1,
+                  opacity: currentExerciseIndex === 0 ? 0.4 : 1,
+                }}
+              >
+                Prev Workout
+              </button>
+              <button
+                onClick={() => {
+                  if (currentExerciseIndex < session.exercises.length - 1)
+                    setCurrentExerciseIndex(currentExerciseIndex + 1);
+                }}
+                disabled={currentExerciseIndex === session.exercises.length - 1}
+                style={{
+                  ...btnStyle(true, COLORS.green),
+                  flex: 1,
+                  opacity:
+                    currentExerciseIndex === session.exercises.length - 1
+                      ? 0.4
+                      : 1,
+                }}
+              >
+                Next Workout
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* ─── Bottom Card: Previous / All Time Toggle ─── */}
+        <div style={{ ...cardStyle, marginTop: 12, background: COLORS.inner }}>
+          <div style={{ display: "flex", gap: 4, marginBottom: 12 }}>
+            <button
+              onClick={() => setMobileBottomTab("previous")}
+              style={{
+                flex: 1,
+                padding: "8px 12px",
+                borderRadius: 8,
+                border: "none",
+                background:
+                  mobileBottomTab === "previous" ? COLORS.accent : COLORS.card,
+                color: mobileBottomTab === "previous" ? "#fff" : COLORS.dim,
+                cursor: "pointer",
+                fontWeight: 600,
+                fontSize: 13,
+              }}
+            >
+              Previous
+            </button>
+            <button
+              onClick={() => setMobileBottomTab("alltime")}
+              style={{
+                flex: 1,
+                padding: "8px 12px",
+                borderRadius: 8,
+                border: "none",
+                background:
+                  mobileBottomTab === "alltime" ? COLORS.accent : COLORS.card,
+                color: mobileBottomTab === "alltime" ? "#fff" : COLORS.dim,
+                cursor: "pointer",
+                fontWeight: 600,
+                fontSize: 13,
+              }}
+            >
+              All Time
+            </button>
+          </div>
+          <div style={{ minHeight: 220 }}>
+            <div style={{ minHeight: 220 }}>
+              {mobileBottomTab === "previous"
+                ? renderPreviousContent()
+                : renderChartContent()}
+            </div>
+          </div>
+        </div>
+
+        {/* Delete Modal */}
+        {showDeleteConfirm && (
+          <div
+            onClick={() => setShowDeleteConfirm(false)}
+            style={{
+              position: "fixed",
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: "rgba(0,0,0,0.7)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              zIndex: 1000,
+            }}
+          >
+            <div
+              onClick={(e: any) => e.stopPropagation()}
+              style={{
+                background: COLORS.card,
+                borderRadius: 16,
+                padding: 24,
+                border: `1px solid ${COLORS.border}`,
+                minWidth: 280,
+                textAlign: "center",
+              }}
+            >
+              <h3 style={{ margin: "0 0 8px", fontSize: 18, fontWeight: 700 }}>
+                Delete Workout?
+              </h3>
+              <p
+                style={{ color: COLORS.dim, fontSize: 14, margin: "0 0 20px" }}
+              >
+                This will discard all logged data for this session.
+              </p>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button
+                  onClick={() => setShowDeleteConfirm(false)}
+                  style={{
+                    flex: 1,
+                    padding: "12px",
+                    borderRadius: 8,
+                    border: `1px solid ${COLORS.border}`,
+                    background: "transparent",
+                    color: COLORS.text,
+                    cursor: "pointer",
+                    fontWeight: 600,
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    setShowDeleteConfirm(false);
+                    onCancel();
+                  }}
+                  style={{
+                    flex: 1,
+                    padding: "12px",
+                    borderRadius: 8,
+                    border: "none",
+                    background: COLORS.red,
+                    color: "#fff",
+                    cursor: "pointer",
+                    fontWeight: 700,
+                  }}
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ═══════════════════════════════════
+  // ═══ DESKTOP LAYOUT ═══
+  // ═══════════════════════════════════
+  return (
+    <div>
+      {/* ─── Top Bar ─── */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: 12,
+        }}
+      >
+        <h1 style={{ fontSize: 24, fontWeight: 700, margin: 0 }}>
+          Log Session
+        </h1>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button
+            onClick={() => onFinish(session)}
+            style={{
+              padding: "8px 16px",
+              borderRadius: 8,
+              border: "none",
+              background: COLORS.green,
+              color: "#fff",
+              cursor: "pointer",
+              fontWeight: 700,
+              fontSize: 13,
+            }}
+          >
+            Finish Session
+          </button>
+          <button
+            onClick={() => onSaveAndReturn()}
+            style={{
+              padding: "8px 16px",
+              borderRadius: 8,
+              border: "none",
+              background: COLORS.accent,
+              color: "#fff",
+              cursor: "pointer",
+              fontWeight: 600,
+              fontSize: 13,
+            }}
+          >
+            Save and Return Home
+          </button>
+          <button
+            onClick={() => setShowDeleteConfirm(true)}
+            style={{
+              padding: "8px 16px",
+              borderRadius: 8,
+              border: `1px solid ${COLORS.red}`,
+              background: "transparent",
+              color: COLORS.red,
+              cursor: "pointer",
+              fontWeight: 600,
+              fontSize: 13,
+            }}
+          >
+            Delete Session
+          </button>
+        </div>
+      </div>
+
+      {/* ─── Three-Column Grid ─── */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr 1fr",
+          gridTemplateRows: "1fr auto",
+          gap: 12,
+          height: contentHeight,
+        }}
+      >
+        {/* ═══ LEFT — Exercise List ═══ */}
+        <div
+          style={{
+            gridRow: "1 / 3",
+            display: "flex",
+            flexDirection: "column",
+            minHeight: 0,
+          }}
+        >
+          <div
+            style={{
+              ...cardStyle,
+              flex: 1,
+              display: "flex",
+              flexDirection: "column",
+              overflow: "auto",
+            }}
+          >
+            <div
+              style={{
+                padding: "8px 10px",
+                background: COLORS.inner,
+                borderRadius: 8,
+                marginBottom: 10,
+                textAlign: "center",
+                fontWeight: 700,
+                fontSize: 15,
+                border: `1px solid ${COLORS.border}`,
+              }}
+            >
+              {session.name}
+            </div>
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: 3,
+                flex: 1,
+              }}
+            >
+              {session.exercises.map((ex: any, i: number) => {
+                const isActive = i === currentExerciseIndex;
+                const allTouched = ex.sets.every(
+                  (_: any, si: number) => touchedSets[`${i}-${si}`],
+                );
+                return (
+                  <div
+                    key={i}
+                    style={{ display: "flex", alignItems: "center", gap: 6 }}
+                  >
+                    <button
+                      onClick={() => removeExercise(i)}
+                      style={{
+                        background: "none",
+                        border: "none",
+                        color: COLORS.red,
+                        cursor:
+                          session.exercises.length <= 1 ? "default" : "pointer",
+                        fontSize: 13,
+                        padding: "3px",
+                        opacity: session.exercises.length <= 1 ? 0.3 : 1,
+                      }}
+                      disabled={session.exercises.length <= 1}
+                    >
+                      ✕
+                    </button>
+                    <button
+                      onClick={() => setCurrentExerciseIndex(i)}
+                      style={{
+                        flex: 1,
+                        padding: "8px 10px",
+                        borderRadius: 8,
+                        border: isActive
+                          ? `2px solid ${COLORS.accent}`
+                          : `1px solid ${COLORS.border}`,
+                        background: isActive
+                          ? COLORS.accent + "18"
+                          : "transparent",
+                        color: allTouched
+                          ? COLORS.green
+                          : isActive
+                            ? COLORS.text
+                            : COLORS.dim,
+                        cursor: "pointer",
+                        fontSize: 13,
+                        fontWeight: isActive ? 600 : 400,
+                        textAlign: "left" as const,
+                      }}
+                    >
+                      {ex.name}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+            <button
+              onClick={() => {
+                const updated = { ...session };
+                updated.exercises = [
+                  ...updated.exercises,
+                  {
+                    name: "New Exercise",
+                    sets: [{ weight: 0, reps: 0, type: "normal" }],
+                  },
+                ];
+                setSession(updated);
+                setCurrentExerciseIndex(updated.exercises.length - 1);
+              }}
+              style={{
+                width: "100%",
+                padding: "8px",
+                borderRadius: 8,
+                border: `1px dashed ${COLORS.border}`,
+                background: "transparent",
+                color: COLORS.dim,
+                cursor: "pointer",
+                fontSize: 12,
+                marginTop: 6,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 6,
+              }}
+            >
+              Add Workout <span style={{ fontSize: 14 }}>+</span>
+            </button>
+          </div>
+        </div>
+
+        {/* ═══ MIDDLE — Set Logging ═══ */}
+        <div
+          style={{
+            ...cardStyle,
+            display: "flex",
+            flexDirection: "column",
+            minHeight: 0,
+          }}
+        >
+          <div style={{ color: COLORS.dim, fontSize: 13 }}>
+            <span style={{ fontWeight: 600, color: COLORS.text }}>Today</span> (
+            {session.date})
+          </div>
+          <h2
+            style={{
+              fontSize: 20,
+              fontWeight: 700,
+              margin: "4px 0 0",
+              textDecoration: "underline",
+              textDecorationColor: COLORS.accent,
+              textUnderlineOffset: 4,
+            }}
+          >
+            {exercise.name}
+          </h2>
+          <div
+            style={{
+              fontSize: 15,
+              fontWeight: 600,
+              marginTop: 2,
+              color: COLORS.accent,
+              textAlign: "center",
+            }}
+          >
+            Set: {currentSetIndex + 1} of {totalSets}
+          </div>
+
+          {previousTopSet && (
+            <div
+              style={{
+                marginTop: 10,
+                padding: "8px 12px",
+                background: COLORS.inner,
+                borderRadius: 8,
+                border: `1px solid ${COLORS.border}`,
+                fontSize: 13,
+                color: COLORS.dim,
+                textAlign: "center",
+              }}
+            >
+              <span style={{ fontWeight: 600, color: COLORS.text }}>
+                Previous Top Set
+              </span>{" "}
+              ({formatPrevDate(previousTopSet.date)}):{" "}
+              <span style={{ color: COLORS.text, fontWeight: 600 }}>
+                {previousTopSet.weight}
+              </span>{" "}
+              lbs ×{" "}
+              <span style={{ color: COLORS.text, fontWeight: 600 }}>
+                {previousTopSet.reps}
+              </span>{" "}
+              reps
+            </div>
+          )}
+
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "center",
+              gap: 32,
+              marginTop: 12,
+              alignItems: "center",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span
+                style={{ fontSize: 15, color: COLORS.dim, fontWeight: 600 }}
+              >
+                Weight
+              </span>
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 3,
+                  width: 90,
+                }}
+              >
+                <button onClick={() => adjustWeight(2.5)} style={arrowBtn}>
+                  ▲
+                </button>
+                <input
+                  type="number"
+                  step="2.5"
+                  style={{
+                    width: "100%",
+                    padding: "8px 4px",
+                    border: `1px solid ${COLORS.border}`,
+                    borderRadius: 8,
+                    background: COLORS.inner,
+                    color: isTouched ? COLORS.text : COLORS.dim,
+                    outline: "none",
+                    fontSize: 18,
+                    textAlign: "center" as const,
+                    fontWeight: 600,
+                    boxSizing: "border-box" as const,
+                  }}
+                  value={currentSet?.weight || ""}
+                  placeholder="0"
+                  onFocus={() =>
+                    markTouched(currentExerciseIndex, currentSetIndex)
+                  }
+                  onChange={(e: any) =>
+                    updateSet(currentSetIndex, "weight", Number(e.target.value))
+                  }
+                  onBlur={(e: any) => {
+                    const rounded =
+                      Math.round(Number(e.target.value) / 2.5) * 2.5;
+                    updateSet(currentSetIndex, "weight", rounded);
+                  }}
+                />
+                <button onClick={() => adjustWeight(-2.5)} style={arrowBtn}>
+                  ▼
+                </button>
+              </div>
+              <span
+                style={{ fontSize: 13, color: COLORS.dim, fontWeight: 600 }}
+              >
+                lbs
+              </span>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span
+                style={{ fontSize: 15, color: COLORS.dim, fontWeight: 600 }}
+              >
+                Reps
+              </span>
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 3,
+                  width: 90,
+                }}
+              >
+                <button onClick={() => adjustReps(1)} style={arrowBtn}>
+                  ▲
+                </button>
+                <input
+                  type="number"
+                  step="1"
+                  style={{
+                    width: "100%",
+                    padding: "8px 4px",
+                    border: `1px solid ${COLORS.border}`,
+                    borderRadius: 8,
+                    background: COLORS.inner,
+                    color: isTouched ? COLORS.text : COLORS.dim,
+                    outline: "none",
+                    fontSize: 18,
+                    textAlign: "center" as const,
+                    fontWeight: 600,
+                    boxSizing: "border-box" as const,
+                  }}
+                  value={currentSet?.reps || ""}
+                  placeholder="0"
+                  onFocus={() =>
+                    markTouched(currentExerciseIndex, currentSetIndex)
+                  }
+                  onChange={(e: any) =>
+                    updateSet(currentSetIndex, "reps", Number(e.target.value))
+                  }
+                  onBlur={(e: any) => {
+                    const rounded = Math.max(
+                      0,
+                      Math.round(Number(e.target.value)),
+                    );
+                    updateSet(currentSetIndex, "reps", rounded);
+                  }}
+                />
+                <button onClick={() => adjustReps(-1)} style={arrowBtn}>
+                  ▼
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 6,
+              marginTop: 12,
+            }}
+          >
+            <button
+              onClick={() => {
+                if (exercise.sets.length <= 1)
+                  removeExercise(currentExerciseIndex);
+                else removeCurrentSet();
+              }}
+              style={{
+                ...btnStyle(false),
+                color: COLORS.red,
+                borderColor: COLORS.red,
+              }}
+            >
+              {exercise.sets.length <= 1 ? "Remove Workout" : "Remove Set"}
+            </button>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                onClick={() =>
+                  setCurrentSetIndex(Math.max(0, currentSetIndex - 1))
+                }
+                disabled={currentSetIndex === 0}
+                style={{
+                  ...btnStyle(false),
+                  flex: 1,
+                  opacity: currentSetIndex === 0 ? 0.4 : 1,
+                }}
+              >
+                Previous Set
+              </button>
+              <button
+                onClick={() => {
+                  if (currentSetIndex === totalSets - 1) {
+                    addSet();
+                    setCurrentSetIndex(currentSetIndex + 1);
+                  } else setCurrentSetIndex(currentSetIndex + 1);
+                }}
+                style={{ ...btnStyle(true), flex: 1 }}
+              >
+                {currentSetIndex === totalSets - 1 ? "+ Add Set" : "Next Set"}
+              </button>
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                onClick={() =>
+                  setCurrentExerciseIndex(Math.max(0, currentExerciseIndex - 1))
+                }
+                disabled={currentExerciseIndex === 0}
+                style={{
+                  ...btnStyle(false),
+                  flex: 1,
+                  opacity: currentExerciseIndex === 0 ? 0.4 : 1,
+                }}
+              >
+                Previous Workout
+              </button>
+              <button
+                onClick={() => {
+                  if (currentExerciseIndex < session.exercises.length - 1)
+                    setCurrentExerciseIndex(currentExerciseIndex + 1);
+                }}
+                disabled={currentExerciseIndex === session.exercises.length - 1}
+                style={{
+                  ...btnStyle(true, COLORS.green),
+                  flex: 1,
+                  opacity:
+                    currentExerciseIndex === session.exercises.length - 1
+                      ? 0.4
+                      : 1,
+                }}
+              >
+                Next Workout
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* ═══ RIGHT — Previous Performance ═══ */}
+        <div style={{ ...cardStyle, background: COLORS.inner }}>
+          {renderPreviousContent()}
+        </div>
+
+        {/* ═══ CHART — Spans middle + right ═══ */}
+        <div style={{ ...cardStyle, gridColumn: "2 / 4" }}>
+          {renderChartContent()}
+        </div>
+      </div>
+
+      {/* Delete Modal */}
+      {showDeleteConfirm && (
+        <div
+          onClick={() => setShowDeleteConfirm(false)}
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: "rgba(0,0,0,0.7)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
+          }}
+        >
+          <div
+            onClick={(e: any) => e.stopPropagation()}
+            style={{
+              background: COLORS.card,
+              borderRadius: 16,
+              padding: 24,
+              border: `1px solid ${COLORS.border}`,
+              minWidth: 300,
+              textAlign: "center",
+            }}
+          >
+            <h3 style={{ margin: "0 0 8px", fontSize: 18, fontWeight: 700 }}>
+              Delete Workout?
+            </h3>
+            <p style={{ color: COLORS.dim, fontSize: 14, margin: "0 0 20px" }}>
+              This will discard all logged data for this session.
+            </p>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                style={{
+                  flex: 1,
+                  padding: "12px",
+                  borderRadius: 8,
+                  border: `1px solid ${COLORS.border}`,
+                  background: "transparent",
+                  color: COLORS.text,
+                  cursor: "pointer",
+                  fontWeight: 600,
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  setShowDeleteConfirm(false);
+                  onCancel();
+                }}
+                style={{
+                  flex: 1,
+                  padding: "12px",
+                  borderRadius: 8,
+                  border: "none",
+                  background: COLORS.red,
+                  color: "#fff",
+                  cursor: "pointer",
+                  fontWeight: 700,
+                }}
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
