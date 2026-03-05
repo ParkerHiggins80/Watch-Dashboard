@@ -27,6 +27,8 @@ export default function Navbar({ currentPage, onNavigate }: NavbarProps) {
 
   const isMobile = windowWidth < 768;
 
+  if (currentPage === "session") return null;
+
   if (isMobile) {
     return (
       <div

@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { COLORS, SET_TYPES } from "../constants";
 import {
   LineChart,
@@ -46,9 +46,23 @@ export default function SessionPage({
       return initial;
     },
   );
-  const [mobileBottomTab, setMobileBottomTab] = useState<
-    "previous" | "alltime"
-  >("previous");
+const [mobileBottomTab, setMobileBottomTab] = useState<"previous" | "alltime">("previous");
+  const [showAddDropdown, setShowAddDropdown] = useState(false);
+  const [addSearch, setAddSearch] = useState("");
+  const [dropdownPos, setDropdownPos] = useState<{top: number; left: number; width: number} | null>(null);
+  const addBtnRef = React.useRef<HTMLButtonElement>(null);
+  const lastExerciseRef = React.useRef<HTMLDivElement>(null);
+  const [dupError, setDupError] = useState<string | null>(null);
+  const [showNewExercisePopup, setShowNewExercisePopup] = useState(false);
+  const [newExName, setNewExName] = useState("");
+  const [newExSets, setNewExSets] = useState(3);
+  const [newExReps, setNewExReps] = useState("8-12");
+  const [newExGroups, setNewExGroups] = useState<string[]>([]);
+  const [newExGroupSearch, setNewExGroupSearch] = useState("");
+  // variant selection per exercise index
+  const [selectedVariants, setSelectedVariants] = useState<Record<number, string>>({});
+  const [indexData, setIndexData] = useState<any[]>([]);
+  
 
   useEffect(() => {
     const handleResize = () => {
@@ -61,6 +75,19 @@ export default function SessionPage({
   }, []);
 
   const isMobile = windowWidth < 768;
+
+  // ─── Variant helpers ───
+  const getExerciseDef = (name: string) =>
+    (session._exercises || []).find((e: any) => e.name === name);
+
+  const getActiveVariant = (exIdx: number) => {
+    const def = getExerciseDef(session.exercises?.[exIdx]?.name);
+    if (!def?.variants?.length) return null;
+    const selectedId = selectedVariants[exIdx];
+    return def.variants.find((v: any) => v.id === selectedId)
+      ?? def.variants.find((v: any) => v.isDefault)
+      ?? def.variants[0];
+  };
   const safeExIdx = Math.min(
     currentExerciseIndex,
     (session.exercises?.length ?? 1) - 1,
@@ -78,10 +105,38 @@ export default function SessionPage({
 
   const touchedKey = `${currentExerciseIndex}-${currentSetIndex}`;
   const isTouched = !!touchedSets[touchedKey];
+  const activeVariant = getActiveVariant(safeExIdx);
+  const exerciseDef = getExerciseDef(exercise.name);
+  const variantList: any[] = exerciseDef?.variants ?? [];
 
   useEffect(() => {
     setCurrentSetIndex(0);
   }, [currentExerciseIndex]);
+
+  // ─── Fetch exercise index from Firestore ───
+  useEffect(() => {
+    if (!exercise.name) return;
+    const load = async () => {
+      try {
+        const { getAuth } = await import("firebase/auth");
+        const { doc, getDoc } = await import("firebase/firestore");
+        const { db } = await import("../firebase");
+        const uid = getAuth().currentUser?.uid;
+        if (!uid) return;
+        const exId = exercise.name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
+        const snap = await getDoc(doc(db, "users", uid, "exerciseIndex", exId));
+        if (snap.exists()) {
+          setIndexData(snap.data().points || []);
+        } else {
+          setIndexData([]);
+        }
+      } catch (err) {
+        console.error("Failed to load exercise index:", err);
+        setIndexData([]);
+      }
+    };
+    load();
+  }, [exercise.name]);
 
   // ─── Previous workout data ───
   const getPreviousWorkout = (exerciseName: string) => {
@@ -147,36 +202,43 @@ export default function SessionPage({
     }
   }, [currentExerciseIndex, previousWorkout?.date]);
 
-  // ─── Chart data ───
-  const chartData = useMemo(() => {
-    const points: { date: string; label: string; weight: number }[] = [];
-    const sorted = [...history].sort((a: any, b: any) =>
-      a.date.localeCompare(b.date),
-    );
-    for (const workout of sorted) {
-      const found = workout.exercises.find(
-        (e: any) => e.name === exercise.name,
-      );
-      if (found) {
-        const workingSets = found.sets.filter(
-          (s: any) => s.type !== "warmup" && s.weight > 0,
-        );
-        if (workingSets.length > 0) {
-          const maxWeight = Math.max(...workingSets.map((s: any) => s.weight));
-          const d = new Date(workout.date + "T12:00:00");
-          points.push({
-            date: workout.date,
-            label: d.toLocaleDateString("en-US", {
-              month: "short",
-              day: "numeric",
-            }),
-            weight: maxWeight,
-          });
+  // ─── Chart data — one series per variant ───
+  const VARIANT_CHART_COLORS = [
+    "#3b82f6", "#10b981", "#f59e0b", "#ef4444",
+    "#a29bfe", "#fd79a8", "#00cec9", "#e17055",
+  ];
+
+  const { chartData, chartVariants } = useMemo(() => {
+    const def = getExerciseDef(exercise.name);
+    const variants: any[] = def?.variants ?? [];
+
+    if (!variants.length || (variants.length === 1 && variants[0].name === "Standard")) {
+      const points = indexData.map((p: any) => {
+        const d = new Date(p.date + "T12:00:00");
+        return { date: p.date, label: d.toLocaleDateString("en-US", { month: "short", day: "numeric" }), Standard: p.maxWeight };
+      });
+      return { chartData: points, chartVariants: [{ name: "Standard", color: VARIANT_CHART_COLORS[0] }] };
+    }
+
+    // Multi-variant: each index point may have a variantWeights map
+    const dateMap: Record<string, any> = {};
+    for (const p of indexData) {
+      const d = new Date(p.date + "T12:00:00");
+      const label = d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+      if (!dateMap[p.date]) dateMap[p.date] = { date: p.date, label };
+      if (p.variantWeights) {
+        for (const [vName, vMax] of Object.entries(p.variantWeights)) {
+          dateMap[p.date][vName] = vMax;
         }
+      } else {
+        dateMap[p.date]["Standard"] = p.maxWeight;
       }
     }
-    return points;
-  }, [history, exercise.name]);
+    return {
+      chartData: Object.values(dateMap),
+      chartVariants: variants.map((v: any, i: number) => ({ name: v.name, color: VARIANT_CHART_COLORS[i % VARIANT_CHART_COLORS.length] })),
+    };
+  }, [indexData, exercise.name]);
 
   // ─── Set operations ───
   const markTouched = (exIdx: number, setIdx: number) => {
@@ -322,9 +384,14 @@ export default function SessionPage({
           <span style={{ fontWeight: 600, color: COLORS.text }}>Previous</span>{" "}
           ({formatPrevDate(previousWorkout.date)})
         </div>
-        <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 10 }}>
+        <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 2 }}>
           {exercise.name}
         </div>
+        {activeVariant && activeVariant.name !== "Standard" && (
+          <div style={{ fontSize: 12, color: COLORS.accent, marginBottom: 8, fontWeight: 500 }}>
+            {activeVariant.name}
+          </div>
+        )}
         <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
           {previousWorkout.sets.map((s: any, i: number) => (
             <div
@@ -364,59 +431,38 @@ export default function SessionPage({
 
   const renderChartContent = () => (
     <>
-      <h3
-        style={{
-          fontSize: 14,
-          fontWeight: 600,
-          margin: "0 0 8px",
-          color: COLORS.dim,
-        }}
-      >
-        All Time — {exercise.name}
-      </h3>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8, flexWrap: "wrap" }}>
+        <h3 style={{ fontSize: 14, fontWeight: 600, margin: 0, color: COLORS.dim }}>
+          All Time — {exercise.name}
+        </h3>
+        {chartVariants.length > 1 && (
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {chartVariants.map(v => (
+              <div key={v.name} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11 }}>
+                <div style={{ width: 10, height: 10, borderRadius: "50%", background: v.color }} />
+                <span style={{ color: COLORS.dim }}>{v.name}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
       {chartData.length > 0 ? (
         <ResponsiveContainer width="100%" height={isMobile ? 160 : 140}>
           <LineChart data={chartData}>
             <CartesianGrid strokeDasharray="3 3" stroke={COLORS.border} />
-            <XAxis
-              dataKey="label"
-              tick={{ fill: COLORS.dim, fontSize: 10 }}
-              stroke={COLORS.border}
-            />
-            <YAxis
-              tick={{ fill: COLORS.dim, fontSize: 10 }}
-              stroke={COLORS.border}
-              domain={["dataMin - 10", "dataMax + 10"]}
-            />
+            <XAxis dataKey="label" tick={{ fill: COLORS.dim, fontSize: 10 }} stroke={COLORS.border} />
+            <YAxis tick={{ fill: COLORS.dim, fontSize: 10 }} stroke={COLORS.border} domain={["dataMin - 10", "dataMax + 10"]} />
             <Tooltip
-              contentStyle={{
-                background: COLORS.card,
-                border: `1px solid ${COLORS.border}`,
-                borderRadius: 8,
-                color: COLORS.text,
-                fontSize: 12,
-              }}
-              formatter={(v: any) => [`${v} lbs`, "Max Weight"]}
+              contentStyle={{ background: COLORS.card, border: `1px solid ${COLORS.border}`, borderRadius: 8, color: COLORS.text, fontSize: 12 }}
+              formatter={(v: any, name: any) => [`${v} lbs`, name]}
             />
-            <Line
-              type="monotone"
-              dataKey="weight"
-              stroke={COLORS.accent}
-              strokeWidth={2}
-              dot={{ fill: COLORS.accent, r: 3 }}
-              activeDot={{ r: 5, fill: COLORS.green }}
-            />
+            {chartVariants.map(v => (
+              <Line key={v.name} type="monotone" dataKey={v.name} stroke={v.color} strokeWidth={2} dot={{ fill: v.color, r: 3 }} activeDot={{ r: 5 }} connectNulls />
+            ))}
           </LineChart>
         </ResponsiveContainer>
       ) : (
-        <div
-          style={{
-            textAlign: "center",
-            color: COLORS.dim,
-            padding: "30px 0",
-            fontSize: 13,
-          }}
-        >
+        <div style={{ textAlign: "center", color: COLORS.dim, padding: "30px 0", fontSize: 13 }}>
           No previous data for {exercise.name}.
         </div>
       )}
@@ -585,28 +631,12 @@ export default function SessionPage({
                 );
               })}
               <button
-                onClick={() => {
-                  const updated = { ...session };
-                  updated.exercises = [
-                    ...updated.exercises,
-                    {
-                      name: "New Exercise",
-                      sets: [{ weight: 0, reps: 0, type: "normal" }],
-                    },
-                  ];
-                  setSession(updated);
-                  setCurrentExerciseIndex(updated.exercises.length - 1);
-                }}
+                onClick={() => { setShowAddDropdown(d => !d); setAddSearch(""); }}
                 style={{
-                  padding: "6px 14px",
-                  borderRadius: 20,
-                  border: `1px dashed ${COLORS.border}`,
-                  background: "transparent",
-                  color: COLORS.dim,
-                  cursor: "pointer",
-                  fontSize: 12,
-                  whiteSpace: "nowrap",
-                  flexShrink: 0,
+                  padding: "6px 14px", borderRadius: 20,
+                  border: `1px dashed ${COLORS.border}`, background: "transparent",
+                  color: COLORS.dim, cursor: "pointer", fontSize: 12,
+                  whiteSpace: "nowrap", flexShrink: 0,
                 }}
               >
                 + Add
@@ -996,8 +1026,91 @@ export default function SessionPage({
   // ═══════════════════════════════════
   // ═══ DESKTOP LAYOUT ═══
   // ═══════════════════════════════════
+
+  const REP_PRESETS = ["3-5","6-8","8-10","8-12","10-12","12-15","15-20"];
+
   return (
     <div>
+      {showNewExercisePopup && (() => {
+        const wGroups: any[] = session._workoutGroups || [];
+        return (
+        <div onClick={() => setShowNewExercisePopup(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: COLORS.card, borderRadius: 14, padding: 24, width: 420, border: `1px solid ${COLORS.border}`, display: "flex", flexDirection: "column", gap: 16 }}>
+            <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700 }}>New Exercise</h3>
+            <div>
+              <div style={{ fontSize: 12, color: COLORS.dim, fontWeight: 600, textTransform: "uppercase" as const, marginBottom: 6 }}>Exercise Name</div>
+              <input autoFocus value={newExName} onChange={e => setNewExName(e.target.value)} placeholder="e.g. Bench Press"
+                style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: `1px solid ${COLORS.border}`, background: COLORS.inner, color: COLORS.text, outline: "none", fontSize: 14, boxSizing: "border-box" as const }} />
+            </div>
+            <div>
+              <div style={{ fontSize: 12, color: COLORS.dim, fontWeight: 600, textTransform: "uppercase" as const, marginBottom: 6 }}>Sets</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <button onClick={() => setNewExSets(s => Math.max(1, s - 1))} style={{ padding: "6px 14px", borderRadius: 8, border: "none", background: COLORS.accent, color: "#fff", cursor: "pointer", fontSize: 16 }}>−</button>
+                <span style={{ fontSize: 16, fontWeight: 600, minWidth: 24, textAlign: "center" as const }}>{newExSets}</span>
+                <button onClick={() => setNewExSets(s => s + 1)} style={{ padding: "6px 14px", borderRadius: 8, border: "none", background: COLORS.accent, color: "#fff", cursor: "pointer", fontSize: 16 }}>+</button>
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize: 12, color: COLORS.dim, fontWeight: 600, textTransform: "uppercase" as const, marginBottom: 6 }}>Goal Rep Range</div>
+              <select value={newExReps} onChange={e => setNewExReps(e.target.value)}
+                style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: `1px solid ${COLORS.border}`, background: COLORS.inner, color: COLORS.text, outline: "none", fontSize: 14, boxSizing: "border-box" as const }}>
+                {REP_PRESETS.map(r => <option key={r} value={r}>{r} reps</option>)}
+              </select>
+            </div>
+            <div>
+              <div style={{ fontSize: 12, color: COLORS.dim, fontWeight: 600, textTransform: "uppercase" as const, marginBottom: 6 }}>Groups</div>
+              {newExGroups.length > 0 && (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
+                  {newExGroups.map((gid: string) => {
+                    const g = wGroups.find((x: any) => x.id === gid);
+                    if (!g) return null;
+                    return (
+                      <div key={gid} style={{ display: "flex", alignItems: "center", gap: 5, padding: "4px 10px", borderRadius: 20, background: COLORS.accent, color: "#fff", fontSize: 13 }}>
+                        {g.name}
+                        <button onClick={() => setNewExGroups((prev: string[]) => prev.filter((id: string) => id !== gid))} style={{ background: "none", border: "none", color: "#fff", cursor: "pointer", fontSize: 14, padding: 0 }}>×</button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              <input
+                placeholder="Type to search groups…"
+                value={newExGroupSearch}
+                onChange={e => setNewExGroupSearch(e.target.value.toLowerCase())}
+                style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: `1px solid ${COLORS.border}`, background: COLORS.inner, color: COLORS.text, outline: "none", fontSize: 13, boxSizing: "border-box" as const }}
+              />
+              {newExGroupSearch && wGroups.filter((g: any) => g.name.toLowerCase().startsWith(newExGroupSearch) && !newExGroups.includes(g.id)).length > 0 && (
+                <div style={{ background: COLORS.card, border: `1px solid ${COLORS.border}`, borderRadius: 8, marginTop: 4, maxHeight: 150, overflowY: "auto" as const }}>
+                  {wGroups.filter((g: any) => g.name.toLowerCase().startsWith(newExGroupSearch) && !newExGroups.includes(g.id)).map((g: any) => (
+                    <button key={g.id} onClick={() => { setNewExGroups((prev: string[]) => [...prev, g.id]); setNewExGroupSearch(""); }}
+                      style={{ width: "100%", padding: "9px 12px", background: "none", border: "none", color: COLORS.text, cursor: "pointer", textAlign: "left" as const, fontSize: 13, borderBottom: `1px solid ${COLORS.border}` }}
+                      onMouseEnter={e => (e.currentTarget.style.background = COLORS.inner)}
+                      onMouseLeave={e => (e.currentTarget.style.background = "none")}>
+                      {g.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button onClick={() => { setShowNewExercisePopup(false); setNewExName(""); setNewExSets(3); setNewExReps("8-12"); setNewExGroups([]); setNewExGroupSearch(""); }}
+                style={{ padding: "7px 16px", borderRadius: 8, border: `1px solid ${COLORS.border}`, background: "transparent", color: COLORS.dim, cursor: "pointer", fontWeight: 600 }}>Cancel</button>
+              <button onClick={() => {
+                if (!newExName.trim()) return;
+                const updated = { ...session };
+                updated.exercises = [...updated.exercises, { name: newExName.trim(), sets: Array.from({ length: newExSets }, () => ({ weight: 0, reps: 0, type: "normal" })) }];
+                setSession(updated);
+                setCurrentExerciseIndex(updated.exercises.length - 1);
+                setShowNewExercisePopup(false);
+                setNewExName(""); setNewExSets(3); setNewExReps("8-12"); setNewExGroups([]); setNewExGroupSearch("");
+              }} style={{ padding: "7px 16px", borderRadius: 8, border: "none", background: COLORS.accent, color: "#fff", cursor: "pointer", fontWeight: 700 }}>
+                Add Exercise
+              </button>
+            </div>
+          </div>
+        </div>
+        );
+      })()}
       {/* ─── Top Bar ─── */}
       <div
         style={{
@@ -1084,7 +1197,7 @@ export default function SessionPage({
               flex: 1,
               display: "flex",
               flexDirection: "column",
-              overflow: "auto",
+              overflow: "visible",
             }}
           >
             <div
@@ -1114,9 +1227,11 @@ export default function SessionPage({
                 const allTouched = ex.sets.every(
                   (_: any, si: number) => touchedSets[`${i}-${si}`],
                 );
+                const isLast = i === session.exercises.length - 1;
                 return (
                   <div
                     key={i}
+                    ref={isLast ? lastExerciseRef : null}
                     style={{ display: "flex", alignItems: "center", gap: 6 }}
                   >
                     <button
@@ -1164,37 +1279,143 @@ export default function SessionPage({
                 );
               })}
             </div>
-            <button
-              onClick={() => {
-                const updated = { ...session };
-                updated.exercises = [
-                  ...updated.exercises,
-                  {
-                    name: "New Exercise",
-                    sets: [{ weight: 0, reps: 0, type: "normal" }],
-                  },
-                ];
-                setSession(updated);
-                setCurrentExerciseIndex(updated.exercises.length - 1);
-              }}
-              style={{
-                width: "100%",
-                padding: "8px",
-                borderRadius: 8,
-                border: `1px dashed ${COLORS.border}`,
-                background: "transparent",
-                color: COLORS.dim,
-                cursor: "pointer",
-                fontSize: 12,
-                marginTop: 6,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: 6,
-              }}
-            >
-              Add Workout <span style={{ fontSize: 14 }}>+</span>
-            </button>
+            <div style={{ position: "relative", marginTop: 6 }}>
+              <button
+                ref={addBtnRef}
+                onClick={() => {
+                  if (!showAddDropdown && lastExerciseRef.current && addBtnRef.current) {
+                    const last = lastExerciseRef.current.getBoundingClientRect();
+                    const btn = addBtnRef.current.getBoundingClientRect();
+                    setDropdownPos({ top: last.bottom + 4, left: btn.left, width: btn.width });
+                  }
+                  setShowAddDropdown(d => !d);
+                  setAddSearch("");
+                }}
+                style={{
+                  width: "100%", padding: "8px", borderRadius: 8,
+                  border: `1px dashed ${COLORS.border}`, background: "transparent",
+                  color: COLORS.dim, cursor: "pointer", fontSize: 12,
+                  display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                }}
+              >
+                Add Workout <span style={{ fontSize: 14 }}>+</span>
+              </button>
+              {showAddDropdown && (() => {
+                // Build muscle groups from _workoutGroups + _exercises
+                const wGroups: any[] = session._workoutGroups || [];
+                const wExercises: any[] = session._exercises || [];
+                const muscleGroups = wGroups.map((g: any) => ({
+                  name: g.name,
+                  exercises: wExercises
+                    .filter((ex: any) => (ex.groupIds || []).includes(g.id))
+                    .map((ex: any) => ex.name),
+                })).filter((g: any) => g.exercises.length > 0);
+                const allExerciseNames = wExercises.map((ex: any) => ex.name);
+                const isSearching = addSearch.trim().length > 0;
+                const filtered = allExerciseNames.filter((n: string) =>
+                  n.toLowerCase().includes(addSearch.toLowerCase())
+                );
+                const alreadyAdded = new Set(session.exercises.map((ex: any) => ex.name));
+                const addExercise = (name: string) => {
+                  if (alreadyAdded.has(name)) {
+                    setDupError(`${name} is already in this session`);
+                    setTimeout(() => setDupError(null), 2000);
+                    return;
+                  }
+                  const updated = { ...session };
+                  updated.exercises = [...updated.exercises, { name, sets: [{ weight: 0, reps: 0, type: "normal" }] }];
+                  setSession(updated);
+                  setCurrentExerciseIndex(updated.exercises.length - 1);
+                  setShowAddDropdown(false);
+                };
+                const dp = dropdownPos;
+                return (
+                  <>
+                  <div style={{
+                    position: "fixed", bottom: 0, left: 0, right: 0,
+                    top: 0, background: "transparent", zIndex: 199,
+                  }} onClick={() => setShowAddDropdown(false)} />
+                  <div style={{
+                    position: "fixed",
+                    top: dp ? dp.top : 200,
+                    left: dp ? dp.left : 0,
+                    width: dp ? dp.width : 300,
+                    bottom: addBtnRef.current ? window.innerHeight - addBtnRef.current.getBoundingClientRect().bottom : 20,
+                    background: COLORS.card, border: `1px solid ${COLORS.border}`,
+                    borderRadius: 10, zIndex: 200, boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
+                    display: "flex", flexDirection: "column",
+                    overflow: "hidden",
+                  }}>
+                    <div style={{ padding: "8px 8px 4px" }}>
+                      <input
+                        autoFocus
+                        value={addSearch}
+                        onChange={e => setAddSearch(e.target.value)}
+                        placeholder="Search exercises…"
+                        style={{
+                          width: "100%", padding: "7px 10px", borderRadius: 8,
+                          border: `1px solid ${COLORS.border}`, background: COLORS.inner,
+                          color: COLORS.text, outline: "none", fontSize: 13,
+                          boxSizing: "border-box" as const,
+                        }}
+                      />
+                    </div>
+                    {dupError && (
+                      <div style={{ padding: "6px 12px", fontSize: 12, color: COLORS.red, background: COLORS.inner, borderBottom: `1px solid ${COLORS.border}` }}>
+                        ⚠ {dupError}
+                      </div>
+                    )}
+                    <div style={{ overflowY: "auto", flex: 1 }}>
+                      {isSearching ? (
+                        filtered.length === 0 ? (
+                          <div style={{ padding: "10px 12px", fontSize: 12, color: COLORS.dim }}>No exercises found</div>
+                        ) : filtered.map((name: string) => (
+                          <button key={name} onClick={() => addExercise(name)}
+                            style={{ width: "100%", padding: "9px 12px", background: "none", border: "none", color: alreadyAdded.has(name) ? COLORS.dim : COLORS.text, cursor: alreadyAdded.has(name) ? "default" : "pointer", textAlign: "left" as const, fontSize: 13, borderBottom: `1px solid ${COLORS.border}`, opacity: alreadyAdded.has(name) ? 0.4 : 1 }}
+                            onMouseEnter={e => { if (!alreadyAdded.has(name)) e.currentTarget.style.background = COLORS.inner; }}
+                            onMouseLeave={e => (e.currentTarget.style.background = "none")}>
+                            {name}
+                          </button>
+                        ))
+                      ) : (
+                        muscleGroups.map((group: any) => (
+                          <div key={group.name}>
+                            <div style={{ padding: "6px 12px 3px", fontSize: 10, fontWeight: 700, color: COLORS.accent, textTransform: "uppercase" as const, letterSpacing: 1, background: COLORS.inner }}>
+                              {group.name}
+                            </div>
+                            {group.exercises.map((name: string) => (
+                              <button key={name} onClick={() => addExercise(name)}
+                                style={{ width: "100%", padding: "9px 12px", background: "none", border: "none", color: COLORS.text, cursor: "pointer", textAlign: "left" as const, fontSize: 13, borderBottom: `1px solid ${COLORS.border}` }}
+                                onMouseEnter={e => (e.currentTarget.style.background = COLORS.inner)}
+                                onMouseLeave={e => (e.currentTarget.style.background = "none")}>
+                                {name}
+                              </button>
+                            ))}
+                          </div>
+                        ))
+                      )}
+                    </div>
+                    <button
+                      onClick={() => {
+                        setShowAddDropdown(false);
+                        setShowNewExercisePopup(true);
+                      }}
+                      style={{
+                        width: "100%", padding: "10px 12px", background: "none",
+                        border: "none", borderTop: `1px solid ${COLORS.border}`,
+                        color: COLORS.accent, cursor: "pointer",
+                        textAlign: "left" as const, fontSize: 13, fontWeight: 600,
+                      }}
+                      onMouseEnter={e => (e.currentTarget.style.background = COLORS.inner)}
+                      onMouseLeave={e => (e.currentTarget.style.background = "none")}
+                    >
+                      + Create New Exercise
+                    </button>
+                  </div>
+                  </>
+                );
+              })()}
+            </div>
           </div>
         </div>
 
@@ -1223,11 +1444,35 @@ export default function SessionPage({
           >
             {exercise.name}
           </h2>
+
+          {/* Variant pills */}
+          {variantList.length > 1 && (
+            <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginTop: 8 }}>
+              {variantList.map((v: any) => {
+                const isActive = activeVariant?.id === v.id;
+                return (
+                  <button key={v.id}
+                    onClick={() => setSelectedVariants(prev => ({ ...prev, [safeExIdx]: v.id }))}
+                    style={{
+                      padding: "3px 10px", borderRadius: 20, fontSize: 12, fontWeight: 600,
+                      border: isActive ? "none" : `1px solid ${COLORS.border}`,
+                      background: isActive ? COLORS.accent : "transparent",
+                      color: isActive ? "#fff" : COLORS.dim,
+                      cursor: "pointer",
+                    }}
+                  >
+                    {v.name}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
           <div
             style={{
               fontSize: 15,
               fontWeight: 600,
-              marginTop: 2,
+              marginTop: 6,
               color: COLORS.accent,
               textAlign: "center",
             }}

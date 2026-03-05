@@ -26,6 +26,69 @@ export const SET_TYPES = [
   { id: "drop", label: "Drop Set", color: COLORS.orange },
 ];
 
+// ============ VARIANT TYPES ============
+
+export interface DataField {
+  id: string;
+  name: string;
+  type: "weight" | "reps" | "time" | "custom";
+  unit?: string;
+}
+
+export interface Subvariant {
+  id: string;
+  name: string;
+  isDefault: boolean;
+  order: number;
+  sets?: number;
+  repRange?: string;
+  dataFields?: DataField[];
+}
+
+export interface Variant {
+  id: string;
+  name: string;
+  isDefault: boolean;
+  order: number;
+  sets: number;
+  repRange: string;
+  dataFields: DataField[];
+  subvariants?: Subvariant[];
+}
+
+export interface ExerciseDefinition {
+  id: string;
+  name: string;
+  sets: number;
+  repRange: string;
+  groupIds: string[];
+  variants: Variant[];
+}
+
+// ============ EQUIPMENT PRESETS ============
+
+export const EQUIPMENT_PRESETS = [
+  "Barbell",
+  "Dumbbell",
+  "Cable",
+  "Machine",
+  "Smith Machine",
+  "Kettlebell",
+  "Bodyweight",
+  "Bands",
+];
+
+// ============ DEFAULT DATA FIELDS ============
+
+export const DEFAULT_DATA_FIELDS: DataField[] = [
+  { id: "weight", name: "Weight", type: "weight", unit: "lbs" },
+  { id: "reps",   name: "Reps",   type: "reps" },
+];
+
+export const OPTIONAL_DATA_FIELDS: DataField[] = [
+  { id: "time", name: "Time", type: "time", unit: "sec" },
+];
+
 // ============ DEFAULT TASKS ============
 export const DEFAULT_TASKS: string[] = [
   "Protein Shake",
@@ -70,38 +133,54 @@ export const EXERCISES: Record<string, string[]> = {
 };
 
 // ============ DEFAULT TEMPLATES ============
+
+const mkEx = (name: string, sets: number, repRange: string, variantName = "Barbell") => ({
+  name,
+  sets,
+  repRange,
+  variants: [{
+    id: `${name}-v0`,
+    name: variantName,
+    isDefault: true,
+    order: 0,
+    sets,
+    repRange,
+    dataFields: [...DEFAULT_DATA_FIELDS],
+  }],
+});
+
 export const DEFAULT_TEMPLATES = [
   {
     id: "push",
     name: "Push Day",
     exercises: [
-      { name: "Bench Press",           sets: 4, repRange: "6-8"  },
-      { name: "Overhead Press",        sets: 3, repRange: "8-10" },
-      { name: "Incline Dumbbell Press",sets: 3, repRange: "8-12" },
-      { name: "Tricep Pushdown",       sets: 3, repRange: "10-12"},
-      { name: "Lateral Raise",         sets: 3, repRange: "12-15"},
+      mkEx("Bench Press",            4, "6-8"),
+      mkEx("Overhead Press",         3, "8-10"),
+      mkEx("Incline Dumbbell Press", 3, "8-12",  "Dumbbell"),
+      mkEx("Tricep Pushdown",        3, "10-12", "Cable"),
+      mkEx("Lateral Raise",          3, "12-15", "Dumbbell"),
     ],
   },
   {
     id: "pull",
     name: "Pull Day",
     exercises: [
-      { name: "Deadlift",     sets: 3, repRange: "5"    },
-      { name: "Barbell Row",  sets: 3, repRange: "6-8"  },
-      { name: "Lat Pulldown", sets: 3, repRange: "8-12" },
-      { name: "Dumbbell Curl",sets: 3, repRange: "10-12"},
-      { name: "Face Pulls",   sets: 3, repRange: "15-20"},
+      mkEx("Deadlift",      3, "5"),
+      mkEx("Barbell Row",   3, "6-8"),
+      mkEx("Lat Pulldown",  3, "8-12",  "Cable"),
+      mkEx("Dumbbell Curl", 3, "10-12", "Dumbbell"),
+      mkEx("Face Pulls",    3, "15-20", "Cable"),
     ],
   },
   {
     id: "legs",
     name: "Leg Day",
     exercises: [
-      { name: "Squat",              sets: 4, repRange: "5"    },
-      { name: "Leg Press",          sets: 3, repRange: "8-12" },
-      { name: "Romanian Deadlift",  sets: 3, repRange: "8-10" },
-      { name: "Calf Raise",         sets: 3, repRange: "15-20"},
-      { name: "Leg Curl",           sets: 3, repRange: "10-12"},
+      mkEx("Squat",             4, "5"),
+      mkEx("Leg Press",         3, "8-12",  "Machine"),
+      mkEx("Romanian Deadlift", 3, "8-10"),
+      mkEx("Calf Raise",        3, "15-20", "Machine"),
+      mkEx("Leg Curl",          3, "10-12", "Machine"),
     ],
   },
   {
@@ -125,15 +204,24 @@ export const DEFAULT_SCHEDULE: Record<string, string> = {
 // ============ HELPER FUNCTIONS ============
 export const generateId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 9);
 
+// ============ VARIANT HELPER ============
+
+export const makeDefaultVariant = (sets: number, repRange: string): Variant => ({
+  id: generateId(),
+  name: "Barbell",
+  isDefault: true,
+  order: 0,
+  sets,
+  repRange,
+  dataFields: [...DEFAULT_DATA_FIELDS],
+});
+
 export const formatDate = (dateStr: string) => {
   const date = new Date(dateStr + "T12:00:00");
   return date.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" });
 };
 
-export const getToday = () => {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-};
+export const getToday = () => new Date().toISOString().split("T")[0];
 
 export const calculateVolume = (sets: any[]) => {
   return sets

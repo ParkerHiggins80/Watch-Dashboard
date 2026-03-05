@@ -33,7 +33,10 @@ export default function App() {
   const [templates, setTemplates] = useState<any[]>(
     DEFAULT_TEMPLATES.map((t) => ({
       ...t,
-      exercises: t.exercises.map((ex) => ({ ...ex, repRange: ex.repRange ?? "8-12" })),
+      exercises: t.exercises.map((ex) => ({
+        ...ex,
+        repRange: ex.repRange ?? "8-12",
+      })),
     })),
   );
   const [schedule, setSchedule] =
@@ -53,7 +56,13 @@ export default function App() {
   const [dayOverrides, setDayOverrides] = useState<Record<string, string>>({});
   const [exercises, setExercises] = useState<any[]>([]);
   const [workoutGroups, setWorkoutGroups] = useState<any[]>([]);
-  const [profileData, setProfileData] = useState({ name: "", bio: "", gym: "", secondaryGym: "", photo: null as string | null });
+  const [profileData, setProfileData] = useState({
+    name: "",
+    bio: "",
+    gym: "",
+    secondaryGym: "",
+    photo: null as string | null,
+  });
 
   // Auth + load data from Firestore
   useEffect(() => {
@@ -74,7 +83,7 @@ export default function App() {
             if (d.profileData) setProfileData(d.profileData);
             if (d.activeSessions && Array.isArray(d.activeSessions)) {
               const validSessions = d.activeSessions.filter(
-                (s: any) => s?.id && s?.exercises?.length > 0 && s?.name
+                (s: any) => s?.id && s?.exercises?.length > 0 && s?.name,
               );
               if (validSessions.length > 0) {
                 setActiveSessions(validSessions);
@@ -108,6 +117,108 @@ export default function App() {
           setHistory(sorted);
           setDataLoaded(true);
           setTimeout(() => setSaveEnabled(true), 500);
+
+          // ── Backfill exercise index if not done yet ──
+          try {
+            const { setDoc: setDocFn, getDoc: getDocFn } =
+              await import("firebase/firestore");
+            const metaRef = doc(db, "users", u.uid, "exerciseIndex", "_meta");
+            const metaSnap = await getDocFn(metaRef);
+            if (!metaSnap.exists() || !metaSnap.data()?.backfilled) {
+              // Load current exercises to get ids
+              const userSnap = await getDoc(doc(db, "users", u.uid));
+              const userExercises: any[] = userSnap.exists()
+                ? (userSnap.data()?.exercises ?? [])
+                : [];
+
+              // Build index from all history
+              const indexMap: Record<
+                string,
+                { exerciseId: string; exerciseName: string; points: any[] }
+              > = {};
+
+              for (const workout of sorted as any[]) {
+                for (const ex of (workout.exercises || []) as any[]) {
+                  const exDef = userExercises.find(
+                    (e: any) => e.name === ex.name,
+                  );
+                  if (!exDef?.id) continue;
+
+                  if (!indexMap[exDef.id]) {
+                    indexMap[exDef.id] = {
+                      exerciseId: exDef.id,
+                      exerciseName: ex.name,
+                      points: [],
+                    };
+                  }
+
+                  const workingSets = (ex.sets || []).filter(
+                    (s: any) =>
+                      s.type !== "warmup" && s.weight > 0 && s.reps > 0,
+                  );
+                  if (workingSets.length === 0) continue;
+
+                  // Remove any existing point for this date then add new one
+                  indexMap[exDef.id].points = indexMap[exDef.id].points.filter(
+                    (p: any) => p.date !== workout.date,
+                  );
+                  const bfMax = Math.max(
+                    ...workingSets.map((s: any) => s.weight ?? 0),
+                  );
+                  const bfVariantWeights: Record<string, number> = {};
+                  if ((exDef.variants ?? []).length > 1) {
+                    const defVariant =
+                      exDef.variants.find((v: any) => v.isDefault)?.name ??
+                      "Standard";
+                    for (const v of exDef.variants) {
+                      const vSets = workingSets.filter(
+                        (s: any) =>
+                          (s.variantName ?? defVariant) === v.name &&
+                          s.weight > 0,
+                      );
+                      if (vSets.length > 0)
+                        bfVariantWeights[v.name] = Math.max(
+                          ...vSets.map((s: any) => s.weight),
+                        );
+                    }
+                  }
+                  const bfPoint: any = {
+                    date: workout.date,
+                    maxWeight: bfMax,
+                    variant: ex.variantName ?? "Standard",
+                    sets: workingSets.map((s: any) => ({
+                      weight: s.weight,
+                      reps: s.reps,
+                      type: s.type ?? "normal",
+                    })),
+                  };
+                  if (Object.keys(bfVariantWeights).length > 0)
+                    bfPoint.variantWeights = bfVariantWeights;
+                  indexMap[exDef.id].points.push(bfPoint);
+                }
+              }
+
+              // Write all index documents
+              for (const [, indexDoc] of Object.entries(indexMap)) {
+                indexDoc.points.sort((a: any, b: any) =>
+                  a.date.localeCompare(b.date),
+                );
+                await setDocFn(
+                  doc(db, "users", u.uid, "exerciseIndex", indexDoc.exerciseId),
+                  indexDoc,
+                );
+              }
+
+              // Mark backfill complete
+              await setDocFn(metaRef, {
+                backfilled: true,
+                backfilledAt: Date.now(),
+              });
+              console.log("Exercise index backfill complete");
+            }
+          } catch (err) {
+            console.error("Backfill error:", err);
+          }
         } catch (err) {
           console.error("Firestore error:", err);
           setDataLoaded(true);
@@ -150,6 +261,24 @@ export default function App() {
           name: ex.name ?? "",
           sets: ex.sets ?? 0,
           repRange: ex.repRange ?? "8-12",
+          variants: (ex.variants ?? []).map((v: any) => ({
+            id: v.id ?? null,
+            name: v.name ?? "",
+            isDefault: v.isDefault ?? false,
+            order: v.order ?? 0,
+            sets: v.sets ?? 3,
+            repRange: v.repRange ?? "8-12",
+            dataFields: v.dataFields ?? [],
+            subvariants: (v.subvariants ?? []).map((s: any) => ({
+              id: s.id ?? null,
+              name: s.name ?? "",
+              isDefault: s.isDefault ?? false,
+              order: s.order ?? 0,
+              sets: s.sets ?? null,
+              repRange: s.repRange ?? null,
+              dataFields: s.dataFields ?? null,
+            })),
+          })),
         })),
       }));
 
@@ -166,6 +295,24 @@ export default function App() {
         sets: ex.sets ?? 3,
         repRange: ex.repRange ?? "8-12",
         groupIds: ex.groupIds ?? [],
+        variants: (ex.variants ?? []).map((v: any) => ({
+          id: v.id ?? null,
+          name: v.name ?? "",
+          isDefault: v.isDefault ?? false,
+          order: v.order ?? 0,
+          sets: v.sets ?? 3,
+          repRange: v.repRange ?? "8-12",
+          dataFields: v.dataFields ?? [],
+          subvariants: (v.subvariants ?? []).map((s: any) => ({
+            id: s.id ?? null,
+            name: s.name ?? "",
+            isDefault: s.isDefault ?? false,
+            order: s.order ?? 0,
+            sets: s.sets ?? null,
+            repRange: s.repRange ?? null,
+            dataFields: s.dataFields ?? null,
+          })),
+        })),
       }));
 
       const cleanWorkoutGroups = workoutGroups.map((g: any) => ({
@@ -173,21 +320,23 @@ export default function App() {
         name: g.name ?? "",
       }));
 
-      const payload = JSON.parse(JSON.stringify({
-        email: user.email,
-        displayName: profileData.name || user.email,
-        templates: cleanTemplates,
-        schedule: Object.fromEntries(
-          Object.entries(schedule).map(([k, v]) => [k, v ?? null]),
-        ),
-        tasks: cleanTasks,
-        taskCompletions: cleanTaskCompletions,
-        activeSessions: cleanSessions,
-        activeSessionIndex,
-        exercises: cleanExercises,
-        workoutGroups: cleanWorkoutGroups,
-        profileData,
-      }));
+      const payload = JSON.parse(
+        JSON.stringify({
+          email: user.email,
+          displayName: profileData.name || user.email,
+          templates: cleanTemplates,
+          schedule: Object.fromEntries(
+            Object.entries(schedule).map(([k, v]) => [k, v ?? null]),
+          ),
+          tasks: cleanTasks,
+          taskCompletions: cleanTaskCompletions,
+          activeSessions: cleanSessions,
+          activeSessionIndex,
+          exercises: cleanExercises,
+          workoutGroups: cleanWorkoutGroups,
+          profileData,
+        }),
+      );
       setDoc(doc(db, "users", user.uid), payload);
     }, 1000);
     return () => clearTimeout(save);
@@ -221,7 +370,11 @@ export default function App() {
     exercises: [],
   };
 
-  const startWorkout = (template: any, editingCompleted?: any, dateStr?: string) => {
+  const startWorkout = (
+    template: any,
+    editingCompleted?: any,
+    dateStr?: string,
+  ) => {
     if (editingCompleted) {
       // Check if this workout is already in activeSessions
       const existingIdx = activeSessions.findIndex(
@@ -267,14 +420,21 @@ export default function App() {
       name: template.name,
       templateId: template.id,
       startTime: Date.now(),
-      exercises: template.exercises.map((ex: any) => ({
-        name: ex.name,
-        sets: Array.from({ length: ex.sets }, () => ({
-          weight: 0,
-          reps: 0,
-          type: "normal",
-        })),
-      })),
+      _templates: templates,
+      _exercises: exercises,
+      _workoutGroups: workoutGroups,
+      exercises: template.exercises.map((ex: any) => {
+        const exDef = exercises.find((e: any) => e.name === ex.name);
+        return {
+          name: ex.name,
+          exerciseId: exDef?.id ?? null,
+          sets: Array.from({ length: ex.sets }, () => ({
+            weight: 0,
+            reps: 0,
+            type: "normal",
+          })),
+        };
+      }),
     };
     const newSessions = [...activeSessions, session];
     setActiveSessions(newSessions);
@@ -332,6 +492,84 @@ export default function App() {
     setHistory(newHistory.sort((a, b) => a.date.localeCompare(b.date)));
     if (user) {
       setDoc(doc(db, "users", user.uid, "workouts", workout.id), workout);
+
+      // ── Write exercise index ──
+      try {
+        const { getDoc: getDocFn, setDoc: setDocFn } =
+          await import("firebase/firestore");
+
+        for (const ex of cleanExercises) {
+          if (!ex.exerciseId) continue;
+          const exDef = exercises.find((e: any) => e.id === ex.exerciseId);
+          const defaultVariant =
+            exDef?.variants?.find((v: any) => v.isDefault)?.name ?? "Standard";
+
+          const workingSets = ex.sets.filter((s: any) => s.type !== "warmup");
+          const maxWeight =
+            workingSets.length > 0
+              ? Math.max(...workingSets.map((s: any) => s.weight ?? 0))
+              : 0;
+
+          // Build variantWeights map if this exercise has variants
+          const variantWeights: Record<string, number> = {};
+          if (exDef?.variants?.length > 1) {
+            for (const v of exDef.variants) {
+              const vSets = workingSets.filter(
+                (s: any) =>
+                  (s.variantName ?? defaultVariant) === v.name && s.weight > 0,
+              );
+              if (vSets.length > 0)
+                variantWeights[v.name] = Math.max(
+                  ...vSets.map((s: any) => s.weight),
+                );
+            }
+          }
+
+          const newPoint: any = {
+            date: workout.date,
+            maxWeight,
+            variant: ex.variantName ?? defaultVariant,
+            sets: workingSets.map((s: any) => ({
+              weight: s.weight ?? 0,
+              reps: s.reps ?? 0,
+              type: s.type ?? "normal",
+            })),
+          };
+          if (Object.keys(variantWeights).length > 0)
+            newPoint.variantWeights = variantWeights;
+
+          const idxRef = doc(
+            db,
+            "users",
+            user.uid,
+            "exerciseIndex",
+            ex.exerciseId,
+          );
+          const idxSnap = await getDocFn(idxRef);
+
+          if (idxSnap.exists()) {
+            const existing = idxSnap.data();
+            const points = (existing.points ?? []).filter(
+              (p: any) => p.date !== workout.date,
+            );
+            await setDocFn(idxRef, {
+              exerciseId: ex.exerciseId,
+              exerciseName: ex.name,
+              points: [...points, newPoint].sort((a: any, b: any) =>
+                a.date.localeCompare(b.date),
+              ),
+            });
+          } else {
+            await setDocFn(idxRef, {
+              exerciseId: ex.exerciseId,
+              exerciseName: ex.name,
+              points: [newPoint],
+            });
+          }
+        }
+      } catch (err) {
+        console.error("Exercise index write error:", err);
+      }
     }
     // Remove the finished session from activeSessions entirely
     const updated = activeSessions.filter((_, i) => i !== activeSessionIndex);
@@ -410,8 +648,12 @@ export default function App() {
   }, [currentPage]);
 
   const renderPage = () => {
-    const safeIndex = Math.min(Math.max(0, activeSessionIndex), Math.max(0, activeSessions.length - 1));
-    const currentSession = activeSessions.length > 0 ? activeSessions[safeIndex] : null;
+    const safeIndex = Math.min(
+      Math.max(0, activeSessionIndex),
+      Math.max(0, activeSessions.length - 1),
+    );
+    const currentSession =
+      activeSessions.length > 0 ? activeSessions[safeIndex] : null;
     if (currentPage === "session") {
       if (!currentSession?.exercises) {
         return null;
@@ -441,7 +683,9 @@ export default function App() {
             schedule={schedule}
             templates={templates}
             history={history}
-            onStartWorkout={(template, editingCompleted, dateStr) => startWorkout(template, editingCompleted, dateStr)}
+            onStartWorkout={(template, editingCompleted, dateStr) =>
+              startWorkout(template, editingCompleted, dateStr)
+            }
             tasks={tasks}
             taskCompletions={taskCompletions}
             setTaskCompletions={setTaskCompletions}
@@ -451,24 +695,32 @@ export default function App() {
             activeSessions={activeSessions}
             activeSessionIndex={activeSessionIndex}
             onContinueWorkout={(idx: number) => {
-              const updated = activeSessions.map((s, i) => i === idx ? { ...s, _pending: false } : s);
+              const updated = activeSessions.map((s, i) =>
+                i === idx ? { ...s, _pending: false } : s,
+              );
               setActiveSessions(updated);
               setActiveSessionIndex(idx);
               setCurrentPage("session");
             }}
             onUpdatePendingSession={(sessionId: string, templateId: string) => {
-              const template = templates.find(t => t.id === templateId);
+              const template = templates.find((t) => t.id === templateId);
               if (!template) return;
               const updated = activeSessions.map((s) =>
-                s.id === sessionId ? {
-                  ...s,
-                  templateId: template.id,
-                  name: template.name,
-                  exercises: template.exercises.map((ex: any) => ({
-                    name: ex.name,
-                    sets: Array.from({ length: ex.sets }, () => ({ weight: 0, reps: 0, type: "normal" })),
-                  })),
-                } : s
+                s.id === sessionId
+                  ? {
+                      ...s,
+                      templateId: template.id,
+                      name: template.name,
+                      exercises: template.exercises.map((ex: any) => ({
+                        name: ex.name,
+                        sets: Array.from({ length: ex.sets }, () => ({
+                          weight: 0,
+                          reps: 0,
+                          type: "normal",
+                        })),
+                      })),
+                    }
+                  : s,
               );
               setActiveSessions(updated);
             }}
@@ -504,7 +756,11 @@ export default function App() {
             history={history}
             templates={templates}
             schedule={schedule}
-            profileData={{ ...profileData, username: (profileData as any).username ?? "", gyms: (profileData as any).gyms ?? [] }}
+            profileData={{
+              ...profileData,
+              username: (profileData as any).username ?? "",
+              gyms: (profileData as any).gyms ?? [],
+            }}
             setProfileData={setProfileData}
           />
         );
@@ -536,9 +792,13 @@ export default function App() {
       <div
         style={{
           padding: "0 20px",
-          marginLeft: windowWidth >= 768 ? 60 : 0,
+          marginLeft:
+            currentPage === "session" ? 0 : windowWidth >= 768 ? 60 : 0,
           height: "100vh",
-          overflowY: currentPage === "profile" || currentPage === "friends" ? "auto" : "hidden",
+          overflowY:
+            currentPage === "profile" || currentPage === "friends"
+              ? "auto"
+              : "hidden",
         }}
       >
         <div
