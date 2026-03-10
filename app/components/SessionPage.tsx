@@ -61,6 +61,12 @@ const [mobileBottomTab, setMobileBottomTab] = useState<"previous" | "alltime">("
   const [newExGroupSearch, setNewExGroupSearch] = useState("");
   
   const [showMobileAddModal, setShowMobileAddModal] = useState(false);
+  const [dragIdx, setDragIdx] = useState<number | null>(null);
+  const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
+  const scrollRef = React.useRef<HTMLDivElement>(null);
+  const dragIdxRef = React.useRef<number | null>(null);
+  const pillRefs = React.useRef<(HTMLDivElement | null)[]>([]);
+  const sessionRef = React.useRef<any>(session);
   // variant selection per exercise index
   const [selectedVariants, setSelectedVariants] = useState<Record<number, string>>({});
   const [indexData, setIndexData] = useState<any[]>([]);
@@ -75,6 +81,8 @@ const [mobileBottomTab, setMobileBottomTab] = useState<"previous" | "alltime">("
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
   }, []);
+
+  useEffect(() => { sessionRef.current = session; }, [session]);
 
   const isMobile = windowWidth < 768;
 
@@ -567,25 +575,7 @@ const [mobileBottomTab, setMobileBottomTab] = useState<"previous" | "alltime">("
               {session.name}
             </div>
             <div
-              onMouseDown={(e: any) => {
-                const el = e.currentTarget;
-                el.dataset.dragging = "true";
-                el.dataset.startX = e.pageX;
-                el.dataset.scrollLeft = el.scrollLeft;
-              }}
-              onMouseMove={(e: any) => {
-                const el = e.currentTarget;
-                if (el.dataset.dragging !== "true") return;
-                e.preventDefault();
-                const dx = e.pageX - Number(el.dataset.startX);
-                el.scrollLeft = Number(el.dataset.scrollLeft) - dx;
-              }}
-              onMouseUp={(e: any) => {
-                e.currentTarget.dataset.dragging = "false";
-              }}
-              onMouseLeave={(e: any) => {
-                e.currentTarget.dataset.dragging = "false";
-              }}
+              ref={scrollRef}
               style={{
                 display: "flex",
                 gap: 6,
@@ -594,8 +584,8 @@ const [mobileBottomTab, setMobileBottomTab] = useState<"previous" | "alltime">("
                 paddingBottom: 4,
                 msOverflowStyle: "none",
                 scrollbarWidth: "none",
-                cursor: "grab",
                 userSelect: "none",
+                position: "relative",
               }}
             >
               {session.exercises.map((ex: any, i: number) => {
@@ -603,33 +593,121 @@ const [mobileBottomTab, setMobileBottomTab] = useState<"previous" | "alltime">("
                 const allTouched = ex.sets.every(
                   (_: any, si: number) => touchedSets[`${i}-${si}`],
                 );
+                const isDragOver = dragOverIdx === i && dragIdx !== i;
+                const isDragging = dragIdx === i;
                 return (
-                  <button
+                  <div
                     key={i}
-                    onClick={() => setCurrentExerciseIndex(i)}
+                    ref={el => { pillRefs.current[i] = el; }}
                     style={{
-                      padding: "6px 14px",
-                      borderRadius: 20,
-                      border: isActive
-                        ? `2px solid ${COLORS.accent}`
-                        : `1px solid ${COLORS.border}`,
-                      background: isActive
-                        ? COLORS.accent + "22"
-                        : "transparent",
-                      color: allTouched
-                        ? COLORS.green
-                        : isActive
-                          ? COLORS.text
-                          : COLORS.dim,
-                      cursor: "pointer",
-                      fontSize: 12,
-                      fontWeight: isActive ? 600 : 400,
-                      whiteSpace: "nowrap",
+                      display: "flex",
+                      alignItems: "center",
                       flexShrink: 0,
+                      borderRadius: 20,
+                      border: isDragging
+                        ? `2px solid ${COLORS.green}`
+                        : isDragOver
+                          ? `2px solid ${COLORS.green}`
+                          : isActive
+                            ? `2px solid ${COLORS.accent}`
+                            : `1px solid ${COLORS.border}`,
+                      background: isDragging
+                        ? COLORS.green + "33"
+                        : isDragOver
+                          ? COLORS.green + "22"
+                          : isActive ? COLORS.accent + "22" : "transparent",
+                      overflow: "hidden",
+                      transition: "border 0.1s, background 0.1s",
+                      boxShadow: isDragging ? "0 2px 8px rgba(0,0,0,0.4)" : "none",
                     }}
                   >
-                    {ex.name}
-                  </button>
+                    {session.exercises.length > 1 && isActive && (
+                      <span
+                        style={{
+                          padding: "6px 4px 6px 8px",
+                          color: COLORS.accent,
+                          fontSize: 11,
+                          cursor: "grab",
+                          lineHeight: 1,
+                          flexShrink: 0,
+                          touchAction: "none",
+                        }}
+                        onPointerDown={(e) => {
+                          e.preventDefault();
+                          dragIdxRef.current = i;
+                          setDragIdx(i);
+                          const hoverRef = { current: i };
+
+                          const onMove = (ev: PointerEvent) => {
+                            const scrollEl = scrollRef.current;
+                            if (!scrollEl) return;
+                            let target = hoverRef.current;
+                            pillRefs.current.forEach((pill, pi) => {
+                              if (!pill || pi === dragIdxRef.current) return;
+                              const r = pill.getBoundingClientRect();
+                              if (ev.clientX > r.left && ev.clientX < r.right) {
+                                target = pi;
+                              }
+                            });
+                            if (target !== hoverRef.current) {
+                              hoverRef.current = target;
+                              const from = dragIdxRef.current!;
+                              const updated = { ...sessionRef.current };
+                              const exs = [...updated.exercises];
+                              const [moved] = exs.splice(from, 1);
+                              exs.splice(target, 0, moved);
+                              updated.exercises = exs;
+                              setSession(updated);
+                              dragIdxRef.current = target;
+                              setDragIdx(target);
+                              setDragOverIdx(target);
+                              setCurrentExerciseIndex(target);
+                            }
+                          };
+
+                          const onUp = () => {
+                            dragIdxRef.current = null;
+                            setDragIdx(null);
+                            setDragOverIdx(null);
+                            window.removeEventListener("pointermove", onMove);
+                            window.removeEventListener("pointerup", onUp);
+                          };
+
+                          window.addEventListener("pointermove", onMove);
+                          window.addEventListener("pointerup", onUp);
+                        }}
+                      >
+                        ☰
+                      </span>
+                    )}
+                    <button
+                      onClick={() => setCurrentExerciseIndex(i)}
+                      style={{
+                        padding: session.exercises.length > 1 ? "6px 4px" : "6px 10px 6px 14px",
+                        border: "none",
+                        background: "transparent",
+                        color: allTouched ? COLORS.green : isActive ? COLORS.text : COLORS.dim,
+                        cursor: "pointer",
+                        fontSize: 12,
+                        fontWeight: isActive ? 600 : 400,
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {ex.name}
+                    </button>
+                    {session.exercises.length > 1 && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); removeExercise(i); }}
+                        style={{
+                          padding: "6px 8px 6px 2px", border: "none",
+                          background: "transparent", color: COLORS.red,
+                          cursor: "pointer", fontSize: 11, lineHeight: 1,
+                        }}
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
                 );
               })}
               <button
