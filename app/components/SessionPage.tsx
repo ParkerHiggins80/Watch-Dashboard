@@ -59,6 +59,8 @@ const [mobileBottomTab, setMobileBottomTab] = useState<"previous" | "alltime">("
   const [newExReps, setNewExReps] = useState("8-12");
   const [newExGroups, setNewExGroups] = useState<string[]>([]);
   const [newExGroupSearch, setNewExGroupSearch] = useState("");
+  
+  const [showMobileAddModal, setShowMobileAddModal] = useState(false);
   // variant selection per exercise index
   const [selectedVariants, setSelectedVariants] = useState<Record<number, string>>({});
   const [indexData, setIndexData] = useState<any[]>([]);
@@ -631,7 +633,7 @@ const [mobileBottomTab, setMobileBottomTab] = useState<"previous" | "alltime">("
                 );
               })}
               <button
-                onClick={() => { setShowAddDropdown(d => !d); setAddSearch(""); }}
+                onClick={() => { setShowMobileAddModal(true); setAddSearch(""); }}
                 style={{
                   padding: "6px 14px", borderRadius: 20,
                   border: `1px dashed ${COLORS.border}`, background: "transparent",
@@ -944,6 +946,135 @@ const [mobileBottomTab, setMobileBottomTab] = useState<"previous" | "alltime">("
             </div>
           </div>
         </div>
+
+        {/* Mobile Add Exercise Modal */}
+        {showMobileAddModal && (() => {
+          const wGroups: any[] = session._workoutGroups || [];
+          const wExercises: any[] = session._exercises || [];
+          const alreadyAdded = new Set(session.exercises.map((ex: any) => ex.name));
+          const muscleGroups = wGroups.map((g: any) => ({
+            name: g.name,
+            exercises: wExercises
+              .filter((ex: any) => (ex.groupIds || []).includes(g.id))
+              .map((ex: any) => ex.name),
+          })).filter((g: any) => g.exercises.length > 0);
+          const allExerciseNames = wExercises.map((ex: any) => ex.name);
+          const isSearching = addSearch.trim().length > 0;
+          const filtered = allExerciseNames.filter((n: string) =>
+            n.toLowerCase().includes(addSearch.toLowerCase())
+          );
+          const addExercise = (name: string) => {
+            if (alreadyAdded.has(name)) {
+              setDupError(`${name} is already in this session`);
+              setTimeout(() => setDupError(null), 2000);
+              return;
+            }
+            const updated = { ...session };
+            updated.exercises = [...updated.exercises, { name, sets: [{ weight: 0, reps: 0, type: "normal" }] }];
+            setSession(updated);
+            setCurrentExerciseIndex(updated.exercises.length - 1);
+            setShowMobileAddModal(false);
+          };
+          return (
+            <>
+              <div onClick={() => setShowMobileAddModal(false)} style={{
+                position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 999,
+              }} />
+              <div style={{
+                position: "fixed", top: "50%", left: "50%",
+                transform: "translate(-50%, -50%)",
+                width: "min(340px, 90vw)", maxHeight: "70vh",
+                background: COLORS.card, borderRadius: 14,
+                border: `1px solid ${COLORS.border}`,
+                zIndex: 1000, display: "flex", flexDirection: "column", overflow: "hidden",
+              }}>
+                <div style={{ padding: "12px 14px", borderBottom: `1px solid ${COLORS.border}` }}>
+                  <span style={{ fontWeight: 700, fontSize: 15, color: COLORS.text }}>Add Exercise</span>
+                </div>
+                <div style={{ padding: "8px 8px 4px" }}>
+                  <input
+                    autoFocus
+                    value={addSearch}
+                    onChange={e => setAddSearch(e.target.value)}
+                    placeholder="Search exercises…"
+                    style={{
+                      width: "100%", padding: "7px 10px", borderRadius: 8,
+                      border: `1px solid ${COLORS.border}`, background: COLORS.inner,
+                      color: COLORS.text, outline: "none", fontSize: 13,
+                      boxSizing: "border-box" as const,
+                    }}
+                  />
+                </div>
+                {dupError && (
+                  <div style={{ padding: "6px 12px", fontSize: 12, color: COLORS.red, background: COLORS.inner }}>
+                    ⚠ {dupError}
+                  </div>
+                )}
+                <div style={{ flex: 1, overflowY: "auto" }}>
+                  {isSearching ? (
+                    filtered.length === 0
+                      ? <div style={{ padding: "12px", fontSize: 13, color: COLORS.dim }}>No exercises found</div>
+                      : filtered.map((name: string) => (
+                        <button key={name} onClick={() => addExercise(name)}
+                          style={{
+                            width: "100%", padding: "10px 12px", background: "none", border: "none",
+                            color: alreadyAdded.has(name) ? COLORS.dim : COLORS.text,
+                            cursor: alreadyAdded.has(name) ? "default" : "pointer",
+                            textAlign: "left" as const, fontSize: 13,
+                            borderBottom: `1px solid ${COLORS.border}`,
+                            opacity: alreadyAdded.has(name) ? 0.4 : 1,
+                          }}
+                          onMouseEnter={e => { if (!alreadyAdded.has(name)) e.currentTarget.style.background = COLORS.inner; }}
+                          onMouseLeave={e => (e.currentTarget.style.background = "none")}>
+                          {name}
+                        </button>
+                      ))
+                  ) : (
+                    muscleGroups.map((group: any) => (
+                      <div key={group.name}>
+                        <div style={{ padding: "6px 12px 3px", fontSize: 10, fontWeight: 700, color: COLORS.accent, textTransform: "uppercase" as const, letterSpacing: 1, background: COLORS.inner }}>
+                          {group.name}
+                        </div>
+                        {group.exercises.map((name: string) => (
+                          <button key={name} onClick={() => addExercise(name)}
+                            style={{ width: "100%", padding: "10px 12px", background: "none", border: "none", color: COLORS.text, cursor: "pointer", textAlign: "left" as const, fontSize: 13, borderBottom: `1px solid ${COLORS.border}` }}
+                            onMouseEnter={e => (e.currentTarget.style.background = COLORS.inner)}
+                            onMouseLeave={e => (e.currentTarget.style.background = "none")}>
+                            {name}
+                          </button>
+                        ))}
+                      </div>
+                    ))
+                  )}
+                </div>
+                <div style={{ borderTop: `1px solid ${COLORS.border}` }}>
+                  <button
+                    onClick={() => { setShowMobileAddModal(false); setShowNewExercisePopup(true); }}
+                    style={{
+                      width: "100%", padding: "10px 12px", background: "none", border: "none",
+                      borderBottom: `1px solid ${COLORS.border}`,
+                      color: COLORS.accent, cursor: "pointer",
+                      textAlign: "left" as const, fontSize: 13, fontWeight: 600,
+                    }}
+                    onMouseEnter={e => (e.currentTarget.style.background = COLORS.inner)}
+                    onMouseLeave={e => (e.currentTarget.style.background = "none")}
+                  >
+                    + Create New Exercise
+                  </button>
+                  <button
+                    onClick={() => setShowMobileAddModal(false)}
+                    style={{
+                      width: "100%", padding: "10px 12px", background: "none", border: "none",
+                      color: COLORS.dim, cursor: "pointer", fontSize: 13,
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </>
+          );
+        })()}
 
         {/* Delete Modal */}
         {showDeleteConfirm && (

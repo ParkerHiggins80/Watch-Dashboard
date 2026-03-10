@@ -922,6 +922,7 @@ export default function TemplatesPage({
   const [pendingGroupId, setPendingGroupId]     = useState<string | null>(null);
   const [groupNameError, setGroupNameError]     = useState<string | null>(null);
   const [deletingExercise, setDeletingExercise] = useState<Exercise | null>(null);
+  const [prefillExercise, setPrefillExercise] = useState<Exercise | null>(null);
 
   // ── Merge mode state ────────────────────────────────────────────────────────
   const [mergeSource, setMergeSource]           = useState<Exercise | null>(null);
@@ -1054,6 +1055,7 @@ export default function TemplatesPage({
     }
     setShowWorkoutPopup(false);
     setEditingExercise(null);
+    setPrefillExercise(null);
   };
 
   const [localGroups, setLocalGroups] = useState<WorkoutGroup[]>(workoutGroups.length > 0 ? workoutGroups : DEFAULT_GROUPS);
@@ -1095,10 +1097,10 @@ export default function TemplatesPage({
       {/* Popup */}
       {showWorkoutPopup && (
         <WorkoutPopup
-          initial={editingExercise ?? undefined}
+          initial={editingExercise ?? prefillExercise ?? undefined}
           groups={localGroups}
           onSave={saveExercise}
-          onClose={() => { setShowWorkoutPopup(false); setEditingExercise(null); }}
+          onClose={() => { setShowWorkoutPopup(false); setEditingExercise(null); setPrefillExercise(null); }}
           onMerge={startMerge}
           onDelete={ex => setDeletingExercise(ex)}
         />
@@ -1322,6 +1324,45 @@ export default function TemplatesPage({
                           onRemove={() => updateTplExs(template.id, exs => exs.filter((_, idx) => idx !== i))}
                         />
                       ))}
+
+                      {/* Import to library buttons */}
+                      {template.exercises.filter(ex =>
+                        !exercises.some(e => e.name.toLowerCase() === ex.name.toLowerCase())
+                      ).length > 0 && (
+                        <div style={{ marginTop: 8, marginBottom: 4, border: `1px solid ${COLORS.border}`, borderRadius: 8, padding: "8px 12px" }}>
+                          <div style={{ fontSize: 11, fontWeight: 700, color: COLORS.dim, textTransform: "uppercase" as const, letterSpacing: 0.5, marginBottom: 8 }}>
+                            Not in Library — Click to Add
+                          </div>
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+                            {template.exercises
+                              .filter(ex => !exercises.some(e => e.name.toLowerCase() === ex.name.toLowerCase()))
+                              .map((ex, i) => (
+                                <button
+                                  key={i}
+                                  onClick={() => {
+                                    setEditingExercise(null);
+                                    setShowWorkoutPopup(true);
+                                    setPrefillExercise({
+                                      id: generateId(),
+                                      name: ex.name,
+                                      sets: ex.sets ?? 3,
+                                      repRange: ex.repRange ?? "8-12",
+                                      groupIds: [],
+                                      variants: [],
+                                    });
+                                  }}
+                                  style={{
+                                    padding: "4px 10px", borderRadius: 6, fontSize: 12, fontWeight: 600,
+                                    border: `1px solid ${COLORS.accent}`, background: "transparent",
+                                    color: COLORS.accent, cursor: "pointer",
+                                  }}
+                                >
+                                  + {ex.name}
+                                </button>
+                              ))}
+                          </div>
+                        </div>
+                      )}
 
                       {/* Exercise picker */}
                       {showExPicker ? (

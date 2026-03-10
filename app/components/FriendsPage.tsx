@@ -7,6 +7,9 @@ import {
   getDocs,
   doc,
   getDoc,
+  setDoc,
+  updateDoc,
+  arrayUnion,
 } from "firebase/firestore";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -28,6 +31,7 @@ interface FriendsPageProps {
   currentUser: { uid: string; email: string };
   schedule?: Record<string, string>;
   templates?: { id: string; name: string; exercises: any[] }[];
+  onTemplateSaved?: (template: any) => void;
 }
 
 const DAYS_SHORT = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -299,12 +303,32 @@ function ActivityCard({
 
 // ── Main Component ────────────────────────────────────────────────────────────
 
-export default function FriendsPage({ currentUser, schedule = {}, templates = [] }: FriendsPageProps) {
+export default function FriendsPage({ currentUser, schedule = {}, templates = [], onTemplateSaved }: FriendsPageProps) {
   const [allUsers,      setAllUsers]      = useState<UserProfile[]>([]);
   const [selectedFriend, setSelectedFriend] = useState<UserProfile | null>(null);
   const [search,        setSearch]        = useState("");
   const [loading,       setLoading]       = useState(true);
   const [friendHistory, setFriendHistory] = useState<any[]>([]);
+  const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
+
+  async function saveTemplate(t: any) {
+    if (!auth.currentUser) return;
+    const newTemplate = {
+      ...t,
+      id: `copied_${t.id ?? t.name}_${Date.now()}`,
+      copiedFrom: selectedFriend?.uid ?? null,
+    };
+    try {
+      const userRef = doc(db, "users", auth.currentUser.uid);
+      const snap = await getDoc(userRef);
+      const existing: any[] = snap.data()?.templates ?? [];
+      await updateDoc(userRef, { templates: [...existing, newTemplate] });
+      setSavedIds(prev => new Set(prev).add(t.id ?? t.name));
+      onTemplateSaved?.(newTemplate);
+    } catch (e) {
+      console.error("Failed to save template:", e);
+    }
+  }
 
   useEffect(() => {
     if (!selectedFriend) return;
@@ -839,8 +863,27 @@ export default function FriendsPage({ currentUser, schedule = {}, templates = []
                   <div style={{ display: "flex", flexDirection: "column", gap: 8, overflowY: "auto", flex: 1 }}>
                     {friendTemplates.filter((t: any) => t.name?.toLowerCase() !== "rest" && (t.exercises?.length ?? 0) > 0).map((t: any, i: number) => (
                       <div key={i} style={{ background: COLORS.inner, borderRadius: 10, border: `1px solid ${COLORS.border}`, padding: "10px 14px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                        <span style={{ fontSize: 13, fontWeight: 700 }}>{t.name}</span>
-                        <span style={{ fontSize: 12, color: COLORS.dim }}>{t.exercises?.length ?? 0} exercises</span>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                          <span style={{ fontSize: 13, fontWeight: 700 }}>{t.name}</span>
+                          <span style={{ fontSize: 12, color: COLORS.dim }}>{t.exercises?.length ?? 0} exercises</span>
+                        </div>
+                        <button
+                          onClick={() => saveTemplate(t)}
+                          disabled={savedIds.has(t.id ?? t.name)}
+                          style={{
+                            padding: "5px 12px",
+                            borderRadius: 7,
+                            border: `1px solid ${COLORS.accent}`,
+                            background: savedIds.has(t.id ?? t.name) ? COLORS.inner : COLORS.accent,
+                            color: savedIds.has(t.id ?? t.name) ? COLORS.dim : "#fff",
+                            cursor: savedIds.has(t.id ?? t.name) ? "default" : "pointer",
+                            fontSize: 12,
+                            fontWeight: 600,
+                            flexShrink: 0,
+                          }}
+                        >
+                          {savedIds.has(t.id ?? t.name) ? "Saved ✓" : "Save to My Templates"}
+                        </button>
                       </div>
                     ))}
                   </div>

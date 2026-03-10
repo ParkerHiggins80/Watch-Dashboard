@@ -185,7 +185,7 @@ export default function App() {
                   const bfPoint: any = {
                     date: workout.date,
                     maxWeight: bfMax,
-                    variant: ex.variantName ?? "Standard",
+                    variannt: ex.variantName ?? "Standard",
                     sets: workingSets.map((s: any) => ({
                       weight: s.weight,
                       reps: s.reps,
@@ -770,6 +770,7 @@ export default function App() {
             currentUser={{ uid: user!.uid, email: user!.email ?? "" }}
             schedule={schedule}
             templates={templates}
+            onTemplateSaved={(t) => setTemplates(prev => [...prev, t])}
           />
         );
         return null;
