@@ -576,6 +576,21 @@ const [mobileBottomTab, setMobileBottomTab] = useState<"previous" | "alltime">("
             </div>
             <div
               ref={scrollRef}
+              onMouseDown={(e: any) => {
+                const el = e.currentTarget;
+                const startX = e.pageX;
+                const startScroll = el.scrollLeft;
+                const onMove = (ev: MouseEvent) => {
+                  const dx = ev.pageX - startX;
+                  el.scrollLeft = startScroll - dx;
+                };
+                const onUp = () => {
+                  window.removeEventListener("mousemove", onMove);
+                  window.removeEventListener("mouseup", onUp);
+                };
+                window.addEventListener("mousemove", onMove);
+                window.addEventListener("mouseup", onUp);
+              }}
               style={{
                 display: "flex",
                 gap: 6,
@@ -586,6 +601,7 @@ const [mobileBottomTab, setMobileBottomTab] = useState<"previous" | "alltime">("
                 scrollbarWidth: "none",
                 userSelect: "none",
                 position: "relative",
+                cursor: "grab",
               }}
             >
               {session.exercises.map((ex: any, i: number) => {
@@ -633,12 +649,26 @@ const [mobileBottomTab, setMobileBottomTab] = useState<"previous" | "alltime">("
                           touchAction: "none",
                         }}
                         onPointerDown={(e) => {
-                          e.preventDefault();
-                          dragIdxRef.current = i;
-                          setDragIdx(i);
+                          e.stopPropagation();
+                          const startX = e.clientX;
                           const hoverRef = { current: i };
+                          let started = false;
+
+                          const onUp = () => {
+                            dragIdxRef.current = null;
+                            setDragIdx(null);
+                            setDragOverIdx(null);
+                            window.removeEventListener("pointermove", onMove);
+                            window.removeEventListener("pointerup", onUp);
+                          };
 
                           const onMove = (ev: PointerEvent) => {
+                            if (!started) {
+                              if (Math.abs(ev.clientX - startX) < 6) return;
+                              started = true;
+                              dragIdxRef.current = i;
+                              setDragIdx(i);
+                            }
                             const scrollEl = scrollRef.current;
                             if (!scrollEl) return;
                             let target = hoverRef.current;
@@ -663,14 +693,6 @@ const [mobileBottomTab, setMobileBottomTab] = useState<"previous" | "alltime">("
                               setDragOverIdx(target);
                               setCurrentExerciseIndex(target);
                             }
-                          };
-
-                          const onUp = () => {
-                            dragIdxRef.current = null;
-                            setDragIdx(null);
-                            setDragOverIdx(null);
-                            window.removeEventListener("pointermove", onMove);
-                            window.removeEventListener("pointerup", onUp);
                           };
 
                           window.addEventListener("pointermove", onMove);
