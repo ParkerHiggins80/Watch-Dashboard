@@ -254,10 +254,11 @@ function ActivityCard({
   user: UserProfile;
   onJoin: () => void;
 }) {
-  // Mock a recent session for the activity feed
-  const sessionTime = "9:20pm";
-  const location    = "Marina Recreation Center";
-  const workoutType = "Push";
+  const recentSession = (user as any).recentSession;
+  if (!recentSession) return null;
+  const sessionTime = recentSession.time ?? "";
+  const location    = recentSession.location ?? "";
+  const workoutType = recentSession.workoutType ?? "";
 
   return (
     <div
@@ -557,7 +558,7 @@ export default function FriendsPage({ currentUser, schedule = {}, templates = []
       >
         <div>
           <div style={{ fontSize: 11, color: COLORS.dim, marginBottom: 2 }}>Next Session</div>
-          <div style={{ fontWeight: 600, fontSize: 14 }}>2/3/26 — 9pm • Push</div>
+          <div style={{ fontWeight: 600, fontSize: 14 }}>{planTime} • {planTemplate || "No template selected"}</div>
         </div>
         <button
           style={{
@@ -705,7 +706,10 @@ export default function FriendsPage({ currentUser, schedule = {}, templates = []
                 }}
               >
                 <span style={{ fontWeight: 600, fontSize: 13 }}>{u.displayName || u.email}</span>
-                <span style={{ fontSize: 11, color: COLORS.dim }}>2/13/26 — Bench 225 lbs × 1 rep</span>
+                {u.recentPRs?.[0]
+                  ? <span style={{ fontSize: 11, color: COLORS.dim }}>{u.recentPRs[0].date} — {u.recentPRs[0].exercise} {u.recentPRs[0].weight} lbs × {u.recentPRs[0].reps} rep</span>
+                  : <span style={{ fontSize: 11, color: COLORS.dim }}>No PRs yet.</span>
+                }
               </div>
             ))}
             {allUsers.length === 0 && (
@@ -775,9 +779,7 @@ export default function FriendsPage({ currentUser, schedule = {}, templates = []
                   : <span style={{ fontSize: 60, fontWeight: 700, color: "#fff" }}>{name ? name[0].toUpperCase() : "?"}</span>
                 }
               </div>
-              {pd.joinedDate && (
-                <div style={{ fontSize: 12, color: COLORS.dim }}>Since {new Date(pd.joinedDate).toLocaleDateString()}</div>
-              )}
+              <div style={{ fontSize: 12, color: COLORS.dim }}>Since {pd.joinedDate || (selectedFriend as any).joinedDate || "—"}</div>
             </div>
 
             {/* Profile info */}

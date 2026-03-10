@@ -108,7 +108,7 @@ const colBody: React.CSSProperties = {
 
 // ─── Edit Workout Modal ───────────────────────────────────────────────────────
 
-interface WorkoutPopupProps {
+export interface WorkoutPopupProps {
   initial?: Exercise;
   groups: WorkoutGroup[];
   onSave: (ex: Exercise) => void;
@@ -171,7 +171,7 @@ function GroupSearch({ groups, selectedIds, onSelect }: {
   );
 }
 
-function WorkoutPopup({ initial, groups, onSave, onClose, onMerge, onDelete }: WorkoutPopupProps) {
+export function WorkoutPopup({ initial, groups, onSave, onClose, onMerge, onDelete }: WorkoutPopupProps) {
   const [name, setName]           = useState(initial?.name ?? "");
   const [selGroups, setSelGroups] = useState<string[]>(initial?.groupIds ?? []);
   const initialVariants: Variant[] = initial?.variants?.length ? initial.variants : [];

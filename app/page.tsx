@@ -62,6 +62,7 @@ export default function App() {
     gym: "",
     secondaryGym: "",
     photo: null as string | null,
+    joinedDate: new Date().toLocaleDateString("en-US", { month: "numeric", day: "numeric", year: "2-digit" }),
   });
 
   // Auth + load data from Firestore
@@ -80,13 +81,23 @@ export default function App() {
             if (d.taskCompletions) setTaskCompletions(d.taskCompletions);
             if (d.exercises) setExercises(d.exercises);
             if (d.workoutGroups) setWorkoutGroups(d.workoutGroups);
-            if (d.profileData) setProfileData(d.profileData);
+            if (d.profileData) setProfileData(prev => ({
+              ...prev,
+              ...d.profileData,
+              joinedDate: d.profileData.joinedDate ?? prev.joinedDate ?? new Date().toLocaleDateString("en-US", { month: "numeric", day: "numeric", year: "2-digit" }),
+            }));
             if (d.activeSessions && Array.isArray(d.activeSessions)) {
               const validSessions = d.activeSessions.filter(
                 (s: any) => s?.id && s?.exercises?.length > 0 && s?.name,
               );
               if (validSessions.length > 0) {
-                setActiveSessions(validSessions);
+                const loadedExercises = d.exercises ?? [];
+                const loadedGroups = d.workoutGroups ?? [];
+                setActiveSessions(validSessions.map((s: any) => ({
+                  ...s,
+                  _exercises: loadedExercises,
+                  _workoutGroups: loadedGroups,
+                })));
                 setActiveSessionIndex(d.activeSessionIndex ?? 0);
                 setCurrentPage("session");
               }
@@ -394,6 +405,8 @@ export default function App() {
           ...editingCompleted,
           _editing: true,
           _completed: false,
+          _exercises: exercises,
+          _workoutGroups: workoutGroups,
           exercises: (editingCompleted.exercises || []).map((ex: any) => ({
             ...ex,
             sets:
@@ -663,10 +676,13 @@ export default function App() {
           session={currentSession}
           setSession={(s: any) => {
             const updated = activeSessions.map((sess, i) =>
-              i === activeSessionIndex ? s : sess,
+              i === activeSessionIndex ? { ...s, _exercises: exercises, _workoutGroups: workoutGroups } : sess,
             );
             setActiveSessions(updated);
           }}
+          exercises={exercises}
+          setExercises={setExercises}
+          workoutGroups={workoutGroups}
           onFinish={finishWorkout}
           onSaveAndReturn={saveAndReturnHome}
           onCancel={cancelWorkout}
@@ -696,7 +712,7 @@ export default function App() {
             activeSessionIndex={activeSessionIndex}
             onContinueWorkout={(idx: number) => {
               const updated = activeSessions.map((s, i) =>
-                i === idx ? { ...s, _pending: false } : s,
+                i === idx ? { ...s, _pending: false, _exercises: exercises, _workoutGroups: workoutGroups } : s,
               );
               setActiveSessions(updated);
               setActiveSessionIndex(idx);

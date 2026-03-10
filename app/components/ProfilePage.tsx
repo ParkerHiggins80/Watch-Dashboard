@@ -446,7 +446,7 @@ export default function ProfilePage({ history, templates, schedule, profileData,
   }, [editingProfile]);
 
   const username = profileData.username || "@pjhiggs80";
-  const sinceDate = "3/2/26";
+  const sinceDate = (profileData as any).joinedDate ?? "";
 
   // ── Compute PRs from history ──
   const prMap: Record<string, PR> = {};

@@ -1,6 +1,7 @@
 "use client";
 import React, { useState, useEffect, useMemo } from "react";
 import { COLORS, SET_TYPES } from "../constants";
+import { WorkoutPopup } from "./TemplatesPage";
 import {
   LineChart,
   Line,
@@ -18,6 +19,9 @@ interface SessionPageProps {
   onSaveAndReturn: () => void;
   onCancel: () => void;
   history: any[];
+  exercises?: any[];
+  setExercises?: (e: any[]) => void;
+  workoutGroups?: any[];
 }
 
 export default function SessionPage({
@@ -27,6 +31,9 @@ export default function SessionPage({
   onSaveAndReturn,
   onCancel,
   history,
+  exercises: exercisesProp = [],
+  setExercises,
+  workoutGroups: workoutGroupsProp = [],
 }: SessionPageProps) {
   const [currentExerciseIndex, setCurrentExerciseIndex] = useState(0);
   const [currentSetIndex, setCurrentSetIndex] = useState(0);
@@ -54,11 +61,6 @@ const [mobileBottomTab, setMobileBottomTab] = useState<"previous" | "alltime">("
   const lastExerciseRef = React.useRef<HTMLDivElement>(null);
   const [dupError, setDupError] = useState<string | null>(null);
   const [showNewExercisePopup, setShowNewExercisePopup] = useState(false);
-  const [newExName, setNewExName] = useState("");
-  const [newExSets, setNewExSets] = useState(3);
-  const [newExReps, setNewExReps] = useState("8-12");
-  const [newExGroups, setNewExGroups] = useState<string[]>([]);
-  const [newExGroupSearch, setNewExGroupSearch] = useState("");
   
   const [showMobileAddModal, setShowMobileAddModal] = useState(false);
   const [dragIdx, setDragIdx] = useState<number | null>(null);
@@ -67,6 +69,10 @@ const [mobileBottomTab, setMobileBottomTab] = useState<"previous" | "alltime">("
   const dragIdxRef = React.useRef<number | null>(null);
   const pillRefs = React.useRef<(HTMLDivElement | null)[]>([]);
   const sessionRef = React.useRef<any>(session);
+  const desktopDragIdxRef = React.useRef<number | null>(null);
+  const desktopPillRefs = React.useRef<(HTMLDivElement | null)[]>([]);
+  const [desktopDragIdx, setDesktopDragIdx] = useState<number | null>(null);
+  const [desktopDragOverIdx, setDesktopDragOverIdx] = useState<number | null>(null);
   // variant selection per exercise index
   const [selectedVariants, setSelectedVariants] = useState<Record<number, string>>({});
   const [indexData, setIndexData] = useState<any[]>([]);
@@ -478,6 +484,8 @@ const [mobileBottomTab, setMobileBottomTab] = useState<"previous" | "alltime">("
       )}
     </>
   );
+
+  const wGroups = workoutGroupsProp.length > 0 ? workoutGroupsProp : (session._workoutGroups || []);
 
   // ═══════════════════════════════════
   // ═══ MOBILE LAYOUT ═══
@@ -1047,6 +1055,27 @@ const [mobileBottomTab, setMobileBottomTab] = useState<"previous" | "alltime">("
           </div>
         </div>
 
+        {/* New Exercise Popup (mobile) */}
+        {showNewExercisePopup && (
+          <WorkoutPopup
+            groups={wGroups}
+            onSave={(ex: any) => {
+              const updatedSession = { ...session };
+              updatedSession.exercises = [...updatedSession.exercises, {
+                name: ex.name,
+                exerciseId: ex.id,
+                sets: Array.from({ length: ex.sets }, () => ({ weight: 0, reps: 0, type: "normal" })),
+              }];
+              updatedSession._exercises = [...(session._exercises || []), ex];
+              setSession(updatedSession);
+              setExercises?.([...(exercisesProp || []), ex]);
+              setCurrentExerciseIndex(updatedSession.exercises.length - 1);
+              setShowNewExercisePopup(false);
+            }}
+            onClose={() => setShowNewExercisePopup(false)}
+          />
+        )}
+
         {/* Mobile Add Exercise Modal */}
         {showMobileAddModal && (() => {
           const wGroups: any[] = session._workoutGroups || [];
@@ -1129,7 +1158,7 @@ const [mobileBottomTab, setMobileBottomTab] = useState<"previous" | "alltime">("
                           {name}
                         </button>
                       ))
-                  ) : (
+                  ) : muscleGroups.length > 0 ? (
                     muscleGroups.map((group: any) => (
                       <div key={group.name}>
                         <div style={{ padding: "6px 12px 3px", fontSize: 10, fontWeight: 700, color: COLORS.accent, textTransform: "uppercase" as const, letterSpacing: 1, background: COLORS.inner }}>
@@ -1144,6 +1173,15 @@ const [mobileBottomTab, setMobileBottomTab] = useState<"previous" | "alltime">("
                           </button>
                         ))}
                       </div>
+                    ))
+                  ) : (
+                    allExerciseNames.map((name: string) => (
+                      <button key={name} onClick={() => addExercise(name)}
+                        style={{ width: "100%", padding: "10px 12px", background: "none", border: "none", color: alreadyAdded.has(name) ? COLORS.dim : COLORS.text, cursor: alreadyAdded.has(name) ? "default" : "pointer", textAlign: "left" as const, fontSize: 13, borderBottom: `1px solid ${COLORS.border}`, opacity: alreadyAdded.has(name) ? 0.4 : 1 }}
+                        onMouseEnter={e => { if (!alreadyAdded.has(name)) e.currentTarget.style.background = COLORS.inner; }}
+                        onMouseLeave={e => (e.currentTarget.style.background = "none")}>
+                        {name}
+                      </button>
                     ))
                   )}
                 </div>
@@ -1262,86 +1300,25 @@ const [mobileBottomTab, setMobileBottomTab] = useState<"previous" | "alltime">("
 
   return (
     <div>
-      {showNewExercisePopup && (() => {
-        const wGroups: any[] = session._workoutGroups || [];
-        return (
-        <div onClick={() => setShowNewExercisePopup(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}>
-          <div onClick={e => e.stopPropagation()} style={{ background: COLORS.card, borderRadius: 14, padding: 24, width: 420, border: `1px solid ${COLORS.border}`, display: "flex", flexDirection: "column", gap: 16 }}>
-            <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700 }}>New Exercise</h3>
-            <div>
-              <div style={{ fontSize: 12, color: COLORS.dim, fontWeight: 600, textTransform: "uppercase" as const, marginBottom: 6 }}>Exercise Name</div>
-              <input autoFocus value={newExName} onChange={e => setNewExName(e.target.value)} placeholder="e.g. Bench Press"
-                style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: `1px solid ${COLORS.border}`, background: COLORS.inner, color: COLORS.text, outline: "none", fontSize: 14, boxSizing: "border-box" as const }} />
-            </div>
-            <div>
-              <div style={{ fontSize: 12, color: COLORS.dim, fontWeight: 600, textTransform: "uppercase" as const, marginBottom: 6 }}>Sets</div>
-              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <button onClick={() => setNewExSets(s => Math.max(1, s - 1))} style={{ padding: "6px 14px", borderRadius: 8, border: "none", background: COLORS.accent, color: "#fff", cursor: "pointer", fontSize: 16 }}>−</button>
-                <span style={{ fontSize: 16, fontWeight: 600, minWidth: 24, textAlign: "center" as const }}>{newExSets}</span>
-                <button onClick={() => setNewExSets(s => s + 1)} style={{ padding: "6px 14px", borderRadius: 8, border: "none", background: COLORS.accent, color: "#fff", cursor: "pointer", fontSize: 16 }}>+</button>
-              </div>
-            </div>
-            <div>
-              <div style={{ fontSize: 12, color: COLORS.dim, fontWeight: 600, textTransform: "uppercase" as const, marginBottom: 6 }}>Goal Rep Range</div>
-              <select value={newExReps} onChange={e => setNewExReps(e.target.value)}
-                style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: `1px solid ${COLORS.border}`, background: COLORS.inner, color: COLORS.text, outline: "none", fontSize: 14, boxSizing: "border-box" as const }}>
-                {REP_PRESETS.map(r => <option key={r} value={r}>{r} reps</option>)}
-              </select>
-            </div>
-            <div>
-              <div style={{ fontSize: 12, color: COLORS.dim, fontWeight: 600, textTransform: "uppercase" as const, marginBottom: 6 }}>Groups</div>
-              {newExGroups.length > 0 && (
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
-                  {newExGroups.map((gid: string) => {
-                    const g = wGroups.find((x: any) => x.id === gid);
-                    if (!g) return null;
-                    return (
-                      <div key={gid} style={{ display: "flex", alignItems: "center", gap: 5, padding: "4px 10px", borderRadius: 20, background: COLORS.accent, color: "#fff", fontSize: 13 }}>
-                        {g.name}
-                        <button onClick={() => setNewExGroups((prev: string[]) => prev.filter((id: string) => id !== gid))} style={{ background: "none", border: "none", color: "#fff", cursor: "pointer", fontSize: 14, padding: 0 }}>×</button>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-              <input
-                placeholder="Type to search groups…"
-                value={newExGroupSearch}
-                onChange={e => setNewExGroupSearch(e.target.value.toLowerCase())}
-                style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: `1px solid ${COLORS.border}`, background: COLORS.inner, color: COLORS.text, outline: "none", fontSize: 13, boxSizing: "border-box" as const }}
-              />
-              {newExGroupSearch && wGroups.filter((g: any) => g.name.toLowerCase().startsWith(newExGroupSearch) && !newExGroups.includes(g.id)).length > 0 && (
-                <div style={{ background: COLORS.card, border: `1px solid ${COLORS.border}`, borderRadius: 8, marginTop: 4, maxHeight: 150, overflowY: "auto" as const }}>
-                  {wGroups.filter((g: any) => g.name.toLowerCase().startsWith(newExGroupSearch) && !newExGroups.includes(g.id)).map((g: any) => (
-                    <button key={g.id} onClick={() => { setNewExGroups((prev: string[]) => [...prev, g.id]); setNewExGroupSearch(""); }}
-                      style={{ width: "100%", padding: "9px 12px", background: "none", border: "none", color: COLORS.text, cursor: "pointer", textAlign: "left" as const, fontSize: 13, borderBottom: `1px solid ${COLORS.border}` }}
-                      onMouseEnter={e => (e.currentTarget.style.background = COLORS.inner)}
-                      onMouseLeave={e => (e.currentTarget.style.background = "none")}>
-                      {g.name}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-              <button onClick={() => { setShowNewExercisePopup(false); setNewExName(""); setNewExSets(3); setNewExReps("8-12"); setNewExGroups([]); setNewExGroupSearch(""); }}
-                style={{ padding: "7px 16px", borderRadius: 8, border: `1px solid ${COLORS.border}`, background: "transparent", color: COLORS.dim, cursor: "pointer", fontWeight: 600 }}>Cancel</button>
-              <button onClick={() => {
-                if (!newExName.trim()) return;
-                const updated = { ...session };
-                updated.exercises = [...updated.exercises, { name: newExName.trim(), sets: Array.from({ length: newExSets }, () => ({ weight: 0, reps: 0, type: "normal" })) }];
-                setSession(updated);
-                setCurrentExerciseIndex(updated.exercises.length - 1);
-                setShowNewExercisePopup(false);
-                setNewExName(""); setNewExSets(3); setNewExReps("8-12"); setNewExGroups([]); setNewExGroupSearch("");
-              }} style={{ padding: "7px 16px", borderRadius: 8, border: "none", background: COLORS.accent, color: "#fff", cursor: "pointer", fontWeight: 700 }}>
-                Add Exercise
-              </button>
-            </div>
-          </div>
-        </div>
-        );
-      })()}
+      {showNewExercisePopup && (
+        <WorkoutPopup
+          groups={wGroups}
+          onSave={(ex: any) => {
+            const updatedSession = { ...session };
+            updatedSession.exercises = [...updatedSession.exercises, {
+              name: ex.name,
+              exerciseId: ex.id,
+              sets: Array.from({ length: ex.sets }, () => ({ weight: 0, reps: 0, type: "normal" })),
+            }];
+            updatedSession._exercises = [...(session._exercises || []), ex];
+            setSession(updatedSession);
+            setExercises?.([...(exercisesProp || []), ex]);
+            setCurrentExerciseIndex(updatedSession.exercises.length - 1);
+            setShowNewExercisePopup(false);
+          }}
+          onClose={() => setShowNewExercisePopup(false)}
+        />
+      )}
       {/* ─── Top Bar ─── */}
       <div
         style={{
@@ -1459,45 +1436,123 @@ const [mobileBottomTab, setMobileBottomTab] = useState<"previous" | "alltime">("
                   (_: any, si: number) => touchedSets[`${i}-${si}`],
                 );
                 const isLast = i === session.exercises.length - 1;
+                const isDragging = desktopDragIdx === i;
+                const isDragOver = desktopDragOverIdx === i && desktopDragIdx !== i;
                 return (
                   <div
                     key={i}
-                    ref={isLast ? lastExerciseRef : null}
-                    style={{ display: "flex", alignItems: "center", gap: 6 }}
+                    ref={el => {
+                      desktopPillRefs.current[i] = el;
+                      if (isLast) (lastExerciseRef as any).current = el;
+                    }}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                      borderRadius: 8,
+                      background: isDragOver ? COLORS.accent + "18" : "transparent",
+                      outline: isDragOver ? `2px solid ${COLORS.accent}` : "none",
+                      transition: "background 0.1s",
+                    }}
                   >
-                    <button
-                      onClick={() => removeExercise(i)}
-                      style={{
-                        background: "none",
-                        border: "none",
-                        color: COLORS.red,
-                        cursor:
-                          session.exercises.length <= 1 ? "default" : "pointer",
-                        fontSize: 13,
-                        padding: "3px",
-                        opacity: session.exercises.length <= 1 ? 0.3 : 1,
-                      }}
-                      disabled={session.exercises.length <= 1}
-                    >
-                      ✕
-                    </button>
+                    {session.exercises.length > 1 && isActive && (
+                      <span
+                        style={{
+                          color: COLORS.accent,
+                          fontSize: 11,
+                          cursor: "grab",
+                          padding: "3px 4px",
+                          lineHeight: 1,
+                          flexShrink: 0,
+                          touchAction: "none",
+                        }}
+                        onPointerDown={(e) => {
+                          e.stopPropagation();
+                          e.preventDefault();
+                          const startY = e.clientY;
+                          const hoverRef = { current: i };
+                          let started = false;
+
+                          const onUp = () => {
+                            desktopDragIdxRef.current = null;
+                            setDesktopDragIdx(null);
+                            setDesktopDragOverIdx(null);
+                            window.removeEventListener("pointermove", onMove);
+                            window.removeEventListener("pointerup", onUp);
+                          };
+
+                          const onMove = (ev: PointerEvent) => {
+                            if (!started) {
+                              if (Math.abs(ev.clientY - startY) < 6) return;
+                              started = true;
+                              desktopDragIdxRef.current = i;
+                              setDesktopDragIdx(i);
+                            }
+                            let target = hoverRef.current;
+                            desktopPillRefs.current.forEach((pill, pi) => {
+                              if (!pill || pi === desktopDragIdxRef.current) return;
+                              const r = pill.getBoundingClientRect();
+                              if (ev.clientY > r.top && ev.clientY < r.bottom) {
+                                target = pi;
+                              }
+                            });
+                            if (target !== hoverRef.current) {
+                              hoverRef.current = target;
+                              const from = desktopDragIdxRef.current!;
+                              const updated = { ...sessionRef.current };
+                              const exs = [...updated.exercises];
+                              const [moved] = exs.splice(from, 1);
+                              exs.splice(target, 0, moved);
+                              updated.exercises = exs;
+                              setSession(updated);
+                              // remap touchedSets keys to follow exercises
+                              const newOrder = Array.from({ length: exs.length }, (_, idx) => idx);
+                              newOrder.splice(target, 0, newOrder.splice(from, 1)[0]);
+                              setTouchedSets(prev => {
+                                const next: Record<string, boolean> = {};
+                                // build a mapping: oldIndex -> newIndex
+                                const oldToNew: Record<number, number> = {};
+                                const tmpOrder = Array.from({ length: sessionRef.current.exercises.length }, (_, idx) => idx);
+                                tmpOrder.splice(target, 0, tmpOrder.splice(from, 1)[0]);
+                                tmpOrder.forEach((oldIdx, newIdx) => { oldToNew[oldIdx] = newIdx; });
+                                Object.keys(prev).forEach(key => {
+                                  const [ei, si] = key.split("-").map(Number);
+                                  if (oldToNew[ei] !== undefined) {
+                                    next[`${oldToNew[ei]}-${si}`] = prev[key];
+                                  }
+                                });
+                                return next;
+                              });
+                              desktopDragIdxRef.current = target;
+                              setDesktopDragIdx(target);
+                              setDesktopDragOverIdx(target);
+                              setCurrentExerciseIndex(target);
+                            }
+                          };
+
+                          window.addEventListener("pointermove", onMove);
+                          window.addEventListener("pointerup", onUp);
+                        }}
+                      >
+                        ☰
+                      </span>
+                    )}
+                    {!isActive && <div style={{ width: 20, flexShrink: 0 }} />}
                     <button
                       onClick={() => setCurrentExerciseIndex(i)}
                       style={{
                         flex: 1,
                         padding: "8px 10px",
                         borderRadius: 8,
-                        border: isActive
-                          ? `2px solid ${COLORS.accent}`
-                          : `1px solid ${COLORS.border}`,
-                        background: isActive
-                          ? COLORS.accent + "18"
-                          : "transparent",
-                        color: allTouched
-                          ? COLORS.green
+                        border: isDragging
+                          ? `2px solid ${COLORS.green}`
                           : isActive
-                            ? COLORS.text
-                            : COLORS.dim,
+                            ? `2px solid ${COLORS.accent}`
+                            : `1px solid ${COLORS.border}`,
+                        background: isDragging
+                          ? COLORS.green + "22"
+                          : isActive ? COLORS.accent + "18" : "transparent",
+                        color: allTouched ? COLORS.green : isActive ? COLORS.text : COLORS.dim,
                         cursor: "pointer",
                         fontSize: 13,
                         fontWeight: isActive ? 600 : 400,
@@ -1505,6 +1560,21 @@ const [mobileBottomTab, setMobileBottomTab] = useState<"previous" | "alltime">("
                       }}
                     >
                       {ex.name}
+                    </button>
+                    <button
+                      onClick={() => removeExercise(i)}
+                      style={{
+                        background: "none",
+                        border: "none",
+                        color: COLORS.red,
+                        cursor: session.exercises.length <= 1 ? "default" : "pointer",
+                        fontSize: 13,
+                        padding: "3px",
+                        opacity: session.exercises.length <= 1 ? 0.3 : 1,
+                      }}
+                      disabled={session.exercises.length <= 1}
+                    >
+                      ✕
                     </button>
                   </div>
                 );
@@ -1608,7 +1678,7 @@ const [mobileBottomTab, setMobileBottomTab] = useState<"previous" | "alltime">("
                             {name}
                           </button>
                         ))
-                      ) : (
+                      ) : muscleGroups.length > 0 ? (
                         muscleGroups.map((group: any) => (
                           <div key={group.name}>
                             <div style={{ padding: "6px 12px 3px", fontSize: 10, fontWeight: 700, color: COLORS.accent, textTransform: "uppercase" as const, letterSpacing: 1, background: COLORS.inner }}>
@@ -1623,6 +1693,15 @@ const [mobileBottomTab, setMobileBottomTab] = useState<"previous" | "alltime">("
                               </button>
                             ))}
                           </div>
+                        ))
+                      ) : (
+                        allExerciseNames.map((name: string) => (
+                          <button key={name} onClick={() => addExercise(name)}
+                            style={{ width: "100%", padding: "9px 12px", background: "none", border: "none", color: alreadyAdded.has(name) ? COLORS.dim : COLORS.text, cursor: alreadyAdded.has(name) ? "default" : "pointer", textAlign: "left" as const, fontSize: 13, borderBottom: `1px solid ${COLORS.border}`, opacity: alreadyAdded.has(name) ? 0.4 : 1 }}
+                            onMouseEnter={e => { if (!alreadyAdded.has(name)) e.currentTarget.style.background = COLORS.inner; }}
+                            onMouseLeave={e => (e.currentTarget.style.background = "none")}>
+                            {name}
+                          </button>
                         ))
                       )}
                     </div>
