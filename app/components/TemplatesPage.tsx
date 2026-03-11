@@ -1373,7 +1373,7 @@ export default function TemplatesPage({
       {/* Main layout */}
       <div style={{ display: "flex", flexDirection: "column", gap: 16, flex: 1, minHeight: 0 }}>
       {/* Top row — Session Templates + Workouts */}
-      <div style={{ display: "grid", gridTemplateColumns: `${templatesCollapsed ? "40px" : "1fr"} ${workoutsCollapsed ? "40px" : "1fr"}`, gap: 16, flex: 1, minHeight: 0, transition: "grid-template-columns 0.2s" }}>
+      <div style={{ display: "grid", gridTemplateColumns: `${templatesCollapsed ? "0px" : "1fr"} ${workoutsCollapsed ? "0px" : "1fr"}`, gap: templatesCollapsed || workoutsCollapsed ? 0 : 16, flex: 1, minHeight: 0, transition: "grid-template-columns 0.2s", overflow: "hidden" }}>
 
         {/* ═══════════════════════════════════════════════════════════════════
             COL 1 — Session Templates
@@ -1386,7 +1386,7 @@ export default function TemplatesPage({
               ) : (
                 <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>Session Templates</h2>
               )}
-              <button onClick={() => setTemplatesCollapsed(c => !c)} style={{ background: "none", border: "none", color: COLORS.dim, cursor: "pointer", fontSize: 16, padding: "0 2px", flexShrink: 0 }}>{templatesCollapsed ? "▶" : "◀"}</button>
+              <button onClick={() => { setTemplatesCollapsed(true); setWorkoutsCollapsed(false); }} style={{ background: "none", border: "none", color: COLORS.dim, cursor: "pointer", fontSize: 13, padding: "0 2px", flexShrink: 0, display: "flex", alignItems: "center", gap: 4, fontWeight: 600 }}>▶ <span>Workouts</span></button>
             </div>
             {!templatesCollapsed && <button onClick={() => setShowCreate(true)} style={accentBtn({ width: "100%", fontSize: 13 })}>+ New Template</button>}
           </div>
@@ -1544,7 +1544,7 @@ export default function TemplatesPage({
               ) : (
                 <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>Workouts</h2>
               )}
-              <button onClick={() => setWorkoutsCollapsed(c => !c)} style={{ background: "none", border: "none", color: COLORS.dim, cursor: "pointer", fontSize: 16, padding: "0 2px", flexShrink: 0 }}>{workoutsCollapsed ? "◀" : "▶"}</button>
+              <button onClick={() => { setTemplatesCollapsed(false); setWorkoutsCollapsed(true); }} style={{ background: "none", border: "none", color: COLORS.dim, cursor: "pointer", fontSize: 13, padding: "0 2px", flexShrink: 0, display: "flex", alignItems: "center", gap: 4, fontWeight: 600 }}>◀ <span>Session Templates</span></button>
             </div>
             {!workoutsCollapsed && mergeSource ? (
               <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", background: COLORS.orange + "18", border: `1px solid ${COLORS.orange}`, borderRadius: 8 }}>
@@ -1687,14 +1687,14 @@ export default function TemplatesPage({
       </div>
 
       {/* Bottom row — Daily Tasks */}
-      <div style={{ ...colStyle, flexShrink: 0, height: 160, opacity: mergeSource ? 0.3 : 1, pointerEvents: mergeSource ? "none" : "auto", transition: "opacity 0.2s" }}>
+      <div style={{ ...colStyle, flexShrink: 0, height: "auto", opacity: mergeSource ? 0.3 : 1, pointerEvents: mergeSource ? "none" : "auto", transition: "opacity 0.2s" }}>
         <div style={colHeader()}>
           <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>Daily Tasks</h2>
           <p style={{ color: COLORS.dim, fontSize: 11, margin: "4px 0 0" }}>Appear every day on home screen</p>
         </div>
-        <div style={{ padding: "10px 12px", display: "flex", flexWrap: "wrap", gap: 8 }}>
+        <div style={{ padding: "10px 12px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
           {tasks.map((task, i) => (
-            <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 180, flex: "1 1 180px" }}>
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: 6 }}>
               <span style={{ color: COLORS.dim, fontSize: 13, minWidth: 18 }}>{i + 1}.</span>
               <input
                 style={inp({ padding: "6px 8px", fontSize: 13 })}
