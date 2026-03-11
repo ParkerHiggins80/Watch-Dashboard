@@ -691,26 +691,6 @@ export function WorkoutPopup({ initial, groups, onSave, onClose, onMerge, onDele
         </div>
       </div>
 
-      {/* Bottom — Daily Tasks */}
-      <div style={{ ...colStyle, flexShrink: 0, opacity: mergeSource ? 0.3 : 1, pointerEvents: mergeSource ? "none" : "auto", transition: "opacity 0.2s" }}>
-        <div style={colHeader()}>
-          <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>Daily Tasks</h2>
-          <p style={{ color: COLORS.dim, fontSize: 11, margin: "4px 0 0" }}>Appear every day on home screen</p>
-        </div>
-        <div style={{ padding: "10px 12px", display: "flex", flexWrap: "wrap", gap: 8 }}>
-          {tasks.map((task, i) => (
-            <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 180, flex: "1 1 180px" }}>
-              <span style={{ color: COLORS.dim, fontSize: 13, minWidth: 18 }}>{i + 1}.</span>
-              <input
-                style={inp({ padding: "6px 8px", fontSize: 13 })}
-                placeholder={`Task ${i + 1}…`}
-                value={task}
-                onChange={e => { const u = [...tasks]; u[i] = e.target.value; setTasks(u); }}
-              />
-            </div>
-          ))}
-        </div>
-      </div>
       </div>
   );
 }
