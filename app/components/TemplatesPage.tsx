@@ -1231,7 +1231,7 @@ export default function TemplatesPage({
   // ── Layout ──────────────────────────────────────────────────────────────────
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 200px)", overflow: "hidden", padding: "0 0 12px", boxSizing: "border-box" }}>
+    <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 60px)", overflow: "hidden", padding: "0 0 12px", boxSizing: "border-box" }}>
 
       {/* Page title */}
       <h1 style={{ fontSize: 28, fontWeight: 700, margin: "0 0 20px", flexShrink: 0 }}>
