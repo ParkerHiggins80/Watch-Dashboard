@@ -18,6 +18,7 @@ interface SessionPageProps {
   onFinish: (session: any) => void;
   onSaveAndReturn: () => void;
   onCancel: () => void;
+  onDeleteWorkout?: (id: string) => void;
   history: any[];
   exercises?: any[];
   setExercises?: (e: any[]) => void;
@@ -30,6 +31,7 @@ export default function SessionPage({
   onFinish,
   onSaveAndReturn,
   onCancel,
+  onDeleteWorkout,
   history,
   exercises: exercisesProp = [],
   setExercises,
@@ -112,6 +114,7 @@ const [mobileBottomTab, setMobileBottomTab] = useState<"previous" | "alltime">("
     name: "",
     sets: [{ weight: 0, reps: 0, type: "normal" }],
   };
+  const exerciseName = useMemo(() => exercise.name, [safeExIdx, session.exercises?.length]);
   const currentSet = exercise.sets?.[currentSetIndex] ?? {
     weight: 0,
     reps: 0,
@@ -139,7 +142,8 @@ const [mobileBottomTab, setMobileBottomTab] = useState<"previous" | "alltime">("
         const { db } = await import("../firebase");
         const uid = getAuth().currentUser?.uid;
         if (!uid) return;
-        const exId = exercise.name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
+        const exDef = (session._exercises || []).find((e: any) => e.name === exercise.name);
+        const exId = exDef?.id ?? exercise.name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
         const snap = await getDoc(doc(db, "users", uid, "exerciseIndex", exId));
         if (snap.exists()) {
           setIndexData(snap.data().points || []);
@@ -152,7 +156,7 @@ const [mobileBottomTab, setMobileBottomTab] = useState<"previous" | "alltime">("
       }
     };
     load();
-  }, [exercise.name]);
+  }, [exerciseName]);
 
   // ─── Previous workout data ───
   const getPreviousWorkout = (exerciseName: string) => {
@@ -171,7 +175,7 @@ const [mobileBottomTab, setMobileBottomTab] = useState<"previous" | "alltime">("
     return null;
   };
 
-  const previousWorkout = getPreviousWorkout(exercise.name);
+  const previousWorkout = getPreviousWorkout(exerciseName);
 
   // ─── Previous top set ───
   const previousTopSet = useMemo(() => {
@@ -1269,7 +1273,11 @@ const [mobileBottomTab, setMobileBottomTab] = useState<"previous" | "alltime">("
                 <button
                   onClick={() => {
                     setShowDeleteConfirm(false);
-                    onCancel();
+                    if (session._editing && onDeleteWorkout) {
+                      onDeleteWorkout(session.id);
+                    } else {
+                      onCancel();
+                    }
                   }}
                   style={{
                     flex: 1,
@@ -2087,7 +2095,11 @@ const [mobileBottomTab, setMobileBottomTab] = useState<"previous" | "alltime">("
               <button
                 onClick={() => {
                   setShowDeleteConfirm(false);
-                  onCancel();
+                  if (session._editing && onDeleteWorkout) {
+                    onDeleteWorkout(session.id);
+                  } else {
+                    onCancel();
+                  }
                 }}
                 style={{
                   flex: 1,

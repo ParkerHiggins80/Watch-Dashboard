@@ -25,9 +25,12 @@ interface HomePageProps {
   activeSessionIndex: number;
   onContinueWorkout: (idx: number) => void;
   onUpdatePendingSession: (sessionId: string, templateId: string) => void;
-  onAddNewSession: (template: any) => void;
+  onAddNewSession: (template: any, dateStr?: string) => void;
   onFinishAndSwitch: (templateId: string) => void;
   onDeleteAndSwitch: (templateId: string) => void;
+  onRemovePendingSession: (sessionId: string) => void;
+  selectedDate: Date;
+  setSelectedDate: (date: Date) => void;
 }
 
 export default function HomePage({
@@ -50,13 +53,16 @@ export default function HomePage({
   onAddNewSession,
   onFinishAndSwitch,
   onDeleteAndSwitch,
+  onRemovePendingSession,
+  selectedDate,
+  setSelectedDate,
 }: HomePageProps) {
   const today = getToday();
 
   const [windowWidth, setWindowWidth] = useState(1200);
   const [windowHeight, setWindowHeight] = useState(800);
   const [mobileTab, setMobileTab] = useState("workout");
-  const [selectedDate, setSelectedDate] = useState(() => new Date());
+  // selectedDate is lifted to parent
   const [popupDay, setPopupDay] = useState<string | null>(null);
   const [showCalendar, setShowCalendar] = useState(false);
   const [longPressTimer, setLongPressTimer] = useState<any>(null);
@@ -109,12 +115,12 @@ export default function HomePage({
     (w) => w.date === selectedDateStr,
   );
   const inProgressSession = activeSessions.find(
-    (s) => !s._completed && !s._editing && !s._pending,
+    (s) => !s._completed && !s._editing && !s._pending && !s._savedHome,
   );
   const completedSessions = activeSessions.filter((s) => s._completed);
-  const isToday = selectedDateStr === getToday();
+  const todayLocal = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}-${String(new Date().getDate()).padStart(2, "0")}`;
+const isToday = selectedDateStr === todayLocal;
   const canAddSession =
-    isToday &&
     activeSessions.length < 5 &&
     !activeSessions.some((s) => s._pending) &&
     selectedCompleted &&
@@ -361,6 +367,7 @@ export default function HomePage({
 
       {(!isMobile || mobileTab !== "weekly") && (
         <div style={{ position: "relative", marginBottom: 20 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <h1
             onClick={() => setShowCalendar(!showCalendar)}
             onMouseEnter={() => setShowDateTooltip(true)}
@@ -377,6 +384,25 @@ export default function HomePage({
           >
             {getSelectedFormattedDate()}{" "}
             <span style={{ fontSize: 16, color: COLORS.dim }}>▼</span>
+            {selectedDateStr !== todayLocal && (
+              <button
+                onClick={(e) => { e.stopPropagation(); setSelectedDate(new Date()); }}
+                style={{
+                  marginLeft: 10,
+                  padding: "4px 12px",
+                  borderRadius: 8,
+                  border: `1px solid ${COLORS.accent}`,
+                  background: "transparent",
+                  color: COLORS.accent,
+                  cursor: "pointer",
+                  fontWeight: 600,
+                  fontSize: 13,
+                  verticalAlign: "middle",
+                }}
+              >
+                Today
+              </button>
+            )}
             {showDateTooltip && !showCalendar && (
               <div
                 style={{
@@ -400,6 +426,7 @@ export default function HomePage({
             )}
           </h1>
 
+          </div>
           {showCalendar && (
             <div
               onClick={(e) => e.stopPropagation()}
@@ -652,7 +679,26 @@ export default function HomePage({
               }}
             >
               {/* ── Header row ── */}
-              {!selectedCompleted && !inProgressSession && selectedTemplate.name !== "Rest" && (
+              {(() => {
+                const savedHomeSession = activeSessions.find((s) => s._savedHome && !s._completed);
+                if (savedHomeSession && isToday) {
+                  return (
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                      <h2 style={{ fontSize: 20, fontWeight: 600, margin: 0 }}>
+                        {selectedTemplate.name}
+                      </h2>
+                      <button
+                        onClick={() => onContinueWorkout(activeSessions.indexOf(savedHomeSession))}
+                        style={{ padding: "10px 24px", borderRadius: 8, border: "none", background: "#e8870e", color: COLORS.text, cursor: "pointer", fontWeight: 700, fontSize: 15 }}
+                      >
+                        Continue
+                      </button>
+                    </div>
+                  );
+                }
+                return null;
+              })()}
+              {!selectedCompleted && selectedTemplate.name !== "Rest" && !activeSessions.some((s) => s._savedHome && !s._completed) && (
                 <div
                   style={{
                     display: "flex",
@@ -837,7 +883,7 @@ export default function HomePage({
                     >
                       Continue
                     </button>
-                  ) : !selectedCompleted && selectedTemplate.name !== "Rest" ? (
+                  ) : !selectedCompleted && selectedTemplate.name !== "Rest" && !activeSessions.some((s) => s._savedHome && !s._completed) ? (
                     <div style={{ position: "relative" }}>
                       <button
                         onClick={() => onStartWorkout(selectedTemplate, undefined, selectedDateStr)}
@@ -999,8 +1045,7 @@ export default function HomePage({
                   >
                     <div>
                       {/* Pending new session */}
-                      {isToday &&
-                        activeSessions
+                      {activeSessions
                           .filter((s) => s._pending)
                           .map((s) => {
                             const pendingTemplate =
@@ -1044,6 +1089,7 @@ export default function HomePage({
                                       >
                                         ▼
                                       </span>
+                                      
                                     </h2>
                                     {showWorkoutPicker && (
                                       <div
@@ -1171,25 +1217,45 @@ export default function HomePage({
                                       </div>
                                     )}
                                   </div>
-                                  <button
-                                    onClick={() =>
-                                      onContinueWorkout(
-                                        activeSessions.indexOf(s),
-                                      )
-                                    }
-                                    style={{
-                                      padding: "10px 24px",
-                                      borderRadius: 8,
-                                      border: "none",
-                                      background: COLORS.accent,
-                                      color: COLORS.text,
-                                      cursor: "pointer",
-                                      fontWeight: 700,
-                                      fontSize: 15,
-                                    }}
-                                  >
-                                    LOG
-                                  </button>
+                                  <div style={{ display: "flex", gap: 8 }}>
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        onRemovePendingSession(s.id);
+                                      }}
+                                      style={{
+                                        padding: "10px 16px",
+                                        borderRadius: 8,
+                                        border: `1px solid ${COLORS.red}`,
+                                        background: "transparent",
+                                        color: COLORS.red,
+                                        cursor: "pointer",
+                                        fontWeight: 600,
+                                        fontSize: 15,
+                                      }}
+                                    >
+                                      Delete
+                                    </button>
+                                    <button
+                                      onClick={() =>
+                                        onContinueWorkout(
+                                          activeSessions.indexOf(s),
+                                        )
+                                      }
+                                      style={{
+                                        padding: "10px 24px",
+                                        borderRadius: 8,
+                                        border: "none",
+                                        background: COLORS.accent,
+                                        color: COLORS.text,
+                                        cursor: "pointer",
+                                        fontWeight: 700,
+                                        fontSize: 15,
+                                      }}
+                                    >
+                                      LOG
+                                    </button>
+                                  </div>
                                 </div>
                                 <div
                                   style={{
@@ -1256,9 +1322,7 @@ export default function HomePage({
                         flex: 1,
                         display: "flex",
                         flexDirection: "column",
-                        justifyContent: activeSessions.some((s) => s._pending)
-                          ? "flex-end"
-                          : "flex-start",
+                        justifyContent: "flex-start",
                       }}
                     >
                       {/* Completed sessions */}
@@ -1401,9 +1465,9 @@ export default function HomePage({
                     }}
                   >
                     {/* Create New Session button */}
-                    {isToday && canAddSession && (
+                    {canAddSession && (
                       <button
-                        onClick={() => onAddNewSession(selectedTemplate)}
+                        onClick={() => onAddNewSession(selectedTemplate, selectedDateStr)}
                         style={{
                           width: "100%",
                           padding: "8px 0",

@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   COLORS,
   DAYS,
@@ -53,7 +53,12 @@ export default function App() {
   const [authLoading, setAuthLoading] = useState(true);
   const [dataLoaded, setDataLoaded] = useState(false);
   const [saveEnabled, setSaveEnabled] = useState(false);
+  const isSaving = useRef(false);
+  const saveTimeout = useRef<any>(null);
+  const currentPageRef = useRef(currentPage);
+  useEffect(() => { currentPageRef.current = currentPage; }, [currentPage]);
   const [dayOverrides, setDayOverrides] = useState<Record<string, string>>({});
+  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [exercises, setExercises] = useState<any[]>([]);
   const [workoutGroups, setWorkoutGroups] = useState<any[]>([]);
   const [profileData, setProfileData] = useState({
@@ -62,7 +67,11 @@ export default function App() {
     gym: "",
     secondaryGym: "",
     photo: null as string | null,
-    joinedDate: new Date().toLocaleDateString("en-US", { month: "numeric", day: "numeric", year: "2-digit" }),
+    joinedDate: new Date().toLocaleDateString("en-US", {
+      month: "numeric",
+      day: "numeric",
+      year: "2-digit",
+    }),
   });
 
   // Auth + load data from Firestore
@@ -81,11 +90,19 @@ export default function App() {
             if (d.taskCompletions) setTaskCompletions(d.taskCompletions);
             if (d.exercises) setExercises(d.exercises);
             if (d.workoutGroups) setWorkoutGroups(d.workoutGroups);
-            if (d.profileData) setProfileData(prev => ({
-              ...prev,
-              ...d.profileData,
-              joinedDate: d.profileData.joinedDate ?? prev.joinedDate ?? new Date().toLocaleDateString("en-US", { month: "numeric", day: "numeric", year: "2-digit" }),
-            }));
+            if (d.profileData)
+              setProfileData((prev) => ({
+                ...prev,
+                ...d.profileData,
+                joinedDate:
+                  d.profileData.joinedDate ??
+                  prev.joinedDate ??
+                  new Date().toLocaleDateString("en-US", {
+                    month: "numeric",
+                    day: "numeric",
+                    year: "2-digit",
+                  }),
+              }));
             if (d.activeSessions && Array.isArray(d.activeSessions)) {
               const validSessions = d.activeSessions.filter(
                 (s: any) => s?.id && s?.exercises?.length > 0 && s?.name,
@@ -93,13 +110,15 @@ export default function App() {
               if (validSessions.length > 0) {
                 const loadedExercises = d.exercises ?? [];
                 const loadedGroups = d.workoutGroups ?? [];
-                setActiveSessions(validSessions.map((s: any) => ({
-                  ...s,
-                  _exercises: loadedExercises,
-                  _workoutGroups: loadedGroups,
-                })));
+                setActiveSessions(
+                  validSessions.map((s: any) => ({
+                    ...s,
+                    _exercises: loadedExercises,
+                    _workoutGroups: loadedGroups,
+                  })),
+                );
                 setActiveSessionIndex(d.activeSessionIndex ?? 0);
-                setCurrentPage("session");
+                if (validSessions.some((s: any) => !s._completed && !s._editing && !s._pending && !s._savedHome)) setCurrentPage("session");
               }
             }
           }
@@ -210,15 +229,18 @@ export default function App() {
               }
 
               // Write all index documents
+              const { writeBatch: writeBatchFn } = await import("firebase/firestore");
+              const bfBatch = writeBatchFn(db);
               for (const [, indexDoc] of Object.entries(indexMap)) {
                 indexDoc.points.sort((a: any, b: any) =>
                   a.date.localeCompare(b.date),
                 );
-                await setDocFn(
+                bfBatch.set(
                   doc(db, "users", u.uid, "exerciseIndex", indexDoc.exerciseId),
                   indexDoc,
                 );
               }
+              await bfBatch.commit();
 
               // Mark backfill complete
               await setDocFn(metaRef, {
@@ -244,8 +266,12 @@ export default function App() {
 
   // Save data to Firestore on changes
   useEffect(() => {
+    console.log("[SAVE EFFECT] triggered, page:", currentPage, "saveEnabled:", saveEnabled);
     if (!user || !saveEnabled) return;
-    const save = setTimeout(() => {
+    console.log("[SAVE EFFECT] ref page:", currentPageRef.current);
+    if (currentPageRef.current === "session") return;
+    if (saveTimeout.current) clearTimeout(saveTimeout.current);
+    saveTimeout.current = setTimeout(async () => {
       const cleanSessions = activeSessions.map((s: any) => ({
         id: s.id,
         date: s.date,
@@ -348,9 +374,21 @@ export default function App() {
           profileData,
         }),
       );
-      setDoc(doc(db, "users", user.uid), payload);
-    }, 1000);
-    return () => clearTimeout(save);
+      if (isSaving.current) {
+        console.log("[SAVE EFFECT] blocked — already saving");
+        return;
+      }
+      console.log("[SAVE EFFECT] writing to Firestore");
+      isSaving.current = true;
+      setDoc(doc(db, "users", user.uid), payload)
+        .catch(() => {
+          // Concurrent write — safe to ignore, next save will succeed
+        })
+        .finally(() => {
+          isSaving.current = false;
+        });
+    }, 3000);
+    return () => clearTimeout(saveTimeout.current);
   }, [
     templates,
     schedule,
@@ -455,11 +493,11 @@ export default function App() {
     setCurrentPage("session");
   };
 
-  const addNewSession = (template: any) => {
+  const addNewSession = (template: any, dateStr?: string) => {
     if (activeSessions.length >= 5) return;
     const session = {
       id: generateId(),
-      date: getToday(),
+      date: dateStr || getToday(),
       name: template.name,
       templateId: template.id,
       startTime: Date.now(),
@@ -485,6 +523,7 @@ export default function App() {
         ...ex,
         sets: (ex.sets || []).filter(
           (s: any) =>
+            s._touched &&
             !isNaN(Number(s.weight)) &&
             !isNaN(Number(s.reps)) &&
             Number(s.weight) > 0 &&
@@ -504,12 +543,13 @@ export default function App() {
       : [...history, workout];
     setHistory(newHistory.sort((a, b) => a.date.localeCompare(b.date)));
     if (user) {
-      setDoc(doc(db, "users", user.uid, "workouts", workout.id), workout);
+      setDoc(doc(db, "users", user.uid, "workouts", workout.id), workout).catch(() => {});
 
       // ── Write exercise index ──
       try {
-        const { getDoc: getDocFn, setDoc: setDocFn } =
+        const { getDoc: getDocFn, setDoc: setDocFn, writeBatch } =
           await import("firebase/firestore");
+        const batch = writeBatch(db);
 
         for (const ex of cleanExercises) {
           if (!ex.exerciseId) continue;
@@ -565,7 +605,7 @@ export default function App() {
             const points = (existing.points ?? []).filter(
               (p: any) => p.date !== workout.date,
             );
-            await setDocFn(idxRef, {
+            batch.set(idxRef, {
               exerciseId: ex.exerciseId,
               exerciseName: ex.name,
               points: [...points, newPoint].sort((a: any, b: any) =>
@@ -573,13 +613,14 @@ export default function App() {
               ),
             });
           } else {
-            await setDocFn(idxRef, {
+            batch.set(idxRef, {
               exerciseId: ex.exerciseId,
               exerciseName: ex.name,
               points: [newPoint],
             });
           }
         }
+        await batch.commit();
       } catch (err) {
         console.error("Exercise index write error:", err);
       }
@@ -588,20 +629,56 @@ export default function App() {
     const updated = activeSessions.filter((_, i) => i !== activeSessionIndex);
     setActiveSessions(updated);
     setActiveSessionIndex(Math.max(0, updated.length - 1));
+    if (session.date) setSelectedDate(new Date(session.date + "T12:00:00"));
+    setSaveEnabled(false);
+    setTimeout(() => setSaveEnabled(true), 3000);
     setCurrentPage("home");
   };
 
-  const saveAndReturnHome = () => {
+  const saveAndReturnHome = (sessionDate?: string) => {
+    if (sessionDate) setSelectedDate(new Date(sessionDate + "T12:00:00"));
+    const updated = activeSessions.map((s, i) =>
+      i === activeSessionIndex ? { ...s, _pending: false, _savedHome: true } : s,
+    );
+    setActiveSessions(updated);
+    // Force immediate save to Firestore with _pending: true
+    if (user) {
+      const cleanSessions = updated.map((s: any) => ({
+        id: s.id,
+        date: s.date,
+        name: s.name,
+        templateId: s.templateId ?? null,
+        startTime: s.startTime ?? null,
+        endTime: s.endTime ?? null,
+        _completed: s._completed ?? false,
+        _editing: s._editing ?? false,
+        _pending: s._pending ?? false,
+        _savedHome: s._savedHome ?? false,
+        exercises: (s.exercises || []).map((ex: any) => ({
+          name: ex.name,
+          sets: (ex.sets || []).map((set: any) => ({
+            weight: set.weight ?? 0,
+            reps: set.reps ?? 0,
+            type: set.type ?? "normal",
+            _touched: set._touched ?? false,
+          })),
+        })),
+      }));
+      setDoc(doc(db, "users", user.uid), { activeSessions: cleanSessions }, { merge: true }).catch(() => {});
+    }
     setCurrentPage("home");
   };
 
   const deleteWorkout = async (id: string) => {
     const newHistory = history.filter((w: any) => w.id !== id);
     setHistory(newHistory);
-    // Also remove from activeSessions so home page doesn't show stale completed state
     const updatedSessions = activeSessions.filter((s: any) => s.id !== id);
     setActiveSessions(updatedSessions);
     setActiveSessionIndex(Math.max(0, updatedSessions.length - 1));
+    const deletedSession = activeSessions.find((s: any) => s.id === id);
+    if (deletedSession?.date)
+      setSelectedDate(new Date(deletedSession.date + "T12:00:00"));
+    setCurrentPage("home");
     if (user) {
       const { deleteDoc } = await import("firebase/firestore");
       deleteDoc(doc(db, "users", user.uid, "workouts", id));
@@ -630,7 +707,7 @@ export default function App() {
         );
         setHistory(newHistory);
         if (user)
-          setDoc(doc(db, "users", user.uid, "workouts", workout.id), workout);
+          setDoc(doc(db, "users", user.uid, "workouts", workout.id), workout).catch(() => {});
       }
     }
     setActiveSessions([]);
@@ -676,7 +753,9 @@ export default function App() {
           session={currentSession}
           setSession={(s: any) => {
             const updated = activeSessions.map((sess, i) =>
-              i === activeSessionIndex ? { ...s, _exercises: exercises, _workoutGroups: workoutGroups } : sess,
+              i === activeSessionIndex
+                ? { ...s, _exercises: exercises, _workoutGroups: workoutGroups }
+                : sess,
             );
             setActiveSessions(updated);
           }}
@@ -684,8 +763,9 @@ export default function App() {
           setExercises={setExercises}
           workoutGroups={workoutGroups}
           onFinish={finishWorkout}
-          onSaveAndReturn={saveAndReturnHome}
+          onSaveAndReturn={() => saveAndReturnHome(currentSession?.date)}
           onCancel={cancelWorkout}
+          onDeleteWorkout={deleteWorkout}
           history={history}
         />
       );
@@ -712,7 +792,15 @@ export default function App() {
             activeSessionIndex={activeSessionIndex}
             onContinueWorkout={(idx: number) => {
               const updated = activeSessions.map((s, i) =>
-                i === idx ? { ...s, _pending: false, _exercises: exercises, _workoutGroups: workoutGroups } : s,
+                i === idx
+                  ? {
+                      ...s,
+                      _pending: false,
+                      _savedHome: false,
+                      _exercises: exercises,
+                      _workoutGroups: workoutGroups,
+                    }
+                  : s,
               );
               setActiveSessions(updated);
               setActiveSessionIndex(idx);
@@ -741,8 +829,15 @@ export default function App() {
               setActiveSessions(updated);
             }}
             onAddNewSession={addNewSession}
+            onRemovePendingSession={(sessionId: string) => {
+              setActiveSessions((prev) =>
+                prev.filter((s) => s.id !== sessionId),
+              );
+            }}
             onFinishAndSwitch={finishAndSwitch}
             onDeleteAndSwitch={deleteAndSwitch}
+            selectedDate={selectedDate}
+            setSelectedDate={setSelectedDate}
           />
         );
       case "templates":
@@ -786,7 +881,7 @@ export default function App() {
             currentUser={{ uid: user!.uid, email: user!.email ?? "" }}
             schedule={schedule}
             templates={templates}
-            onTemplateSaved={(t) => setTemplates(prev => [...prev, t])}
+            onTemplateSaved={(t) => setTemplates((prev) => [...prev, t])}
           />
         );
         return null;
