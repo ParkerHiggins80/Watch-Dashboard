@@ -31,7 +31,7 @@ export const SET_TYPES = [
 export interface DataField {
   id: string;
   name: string;
-  type: "weight" | "reps" | "time" | "custom";
+  type: "weight" | "reps" | "time" | "custom" | "number";
   unit?: string;
 }
 
@@ -86,7 +86,9 @@ export const DEFAULT_DATA_FIELDS: DataField[] = [
 ];
 
 export const OPTIONAL_DATA_FIELDS: DataField[] = [
-  { id: "time", name: "Time", type: "time", unit: "sec" },
+  { id: "weight", name: "Weight", type: "number", unit: "lbs" },
+  { id: "reps", name: "Reps", type: "number" },
+  { id: "time", name: "Time", type: "time", unit: "min:sec" },
 ];
 
 // ============ DEFAULT TASKS ============

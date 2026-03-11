@@ -41,7 +41,7 @@ interface TemplatesPageProps {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const REP_PRESETS = ["3-5", "6-8", "8-10", "8-12", "10-12", "12-15", "15-20"];
+
 
 // ─── Shared style helpers ─────────────────────────────────────────────────────
 
@@ -209,15 +209,19 @@ export function WorkoutPopup({ initial, groups, onSave, onClose, onMerge, onDele
       dataFields: [...DEFAULT_DATA_FIELDS],
     };
     setVariants(prev => [...prev, newV]);
-    setExpandedVariantId(isFirst ? newV.id : expandedVariantId);
+    setExpandedVariantId(newV.id);
     setShowAddVariant(false);
     setCustomVariantName("");
   };
 
   const removeVariant = (id: string) => {
     const remaining = variants.filter(v => v.id !== id);
-    if (remaining.length === 0) return;
-    // If we removed the default, promote first remaining
+    if (remaining.length === 0) {
+      setVariants([]);
+      setExpandedVariantId(null);
+      setShowAddVariant(true);
+      return;
+    }
     const hasDefault = remaining.some(v => v.isDefault);
     setVariants(hasDefault ? remaining : remaining.map((v, i) => ({ ...v, isDefault: i === 0 })));
   };
@@ -294,9 +298,7 @@ export function WorkoutPopup({ initial, groups, onSave, onClose, onMerge, onDele
   const removeDataField = (variantId: string, fieldId: string) => {
     setVariants(prev => prev.map(v =>
       v.id !== variantId ? v : {
-        ...v, dataFields: v.dataFields.filter(f =>
-          f.id !== fieldId && !["weight","reps"].includes(f.id) // protect Weight + Reps
-        )
+        ...v, dataFields: v.dataFields.filter(f => f.id !== fieldId)
       }
     ));
   };
@@ -400,21 +402,23 @@ export function WorkoutPopup({ initial, groups, onSave, onClose, onMerge, onDele
         {/* ── Standard Mode ── */}
         {mode === "standard" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+            <div style={{ display: "flex", gap: 20, alignItems: "flex-end", flexWrap: "wrap" }}>
               <div>
                 <div style={{ ...sectionLabel, marginBottom: 4 }}>Sets</div>
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                   <button onClick={() => setStdSets(s => Math.max(1, s - 1))} style={{ background: COLORS.border, border: "none", color: COLORS.text, borderRadius: 4, width: 22, height: 22, cursor: "pointer", fontSize: 14 }}>−</button>
-                  <span style={{ fontSize: 14, fontWeight: 600, minWidth: 20, textAlign: "center" }}>{stdSets}</span>
+                  <input type="number" inputMode="numeric" pattern="[0-9]*" value={stdSets} onChange={e => setStdSets(Math.max(1, parseInt(e.target.value) || 1))} style={{ border: `1px solid ${COLORS.border}`, borderRadius: 6, background: COLORS.inner, color: COLORS.text, outline: "none", textAlign: "center", boxSizing: "border-box", fontSize: 12, padding: "5px 6px", width: 44 }} />
                   <button onClick={() => setStdSets(s => s + 1)} style={{ background: COLORS.border, border: "none", color: COLORS.text, borderRadius: 4, width: 22, height: 22, cursor: "pointer", fontSize: 14 }}>+</button>
                 </div>
               </div>
-              <div style={{ flex: 1 }}>
-                <div style={{ ...sectionLabel, marginBottom: 4 }}>Rep Range</div>
-                <select value={stdRepRange} onChange={e => setStdRepRange(e.target.value)} style={inp({ padding: "5px 8px", fontSize: 12 })}>
-                  {REP_PRESETS.map(r => <option key={r} value={r}>{r} reps</option>)}
-                </select>
-              </div>
+              {stdDataFields.some(f => f.id === "reps") && (
+                <div>
+                  <RepRangeInput value={stdRepRange} onChange={setStdRepRange} label="Reps" />
+                </div>
+              )}
+              {stdDataFields.filter(f => f.id !== "reps").map(f => (
+                <DataFieldDisplay key={f.id} field={f} onChange={updated => setStdDataFields(prev => prev.map(df => df.id === updated.id ? updated : df))} />
+              ))}
             </div>
             <div>
               <div style={{ ...sectionLabel, marginBottom: 6 }}>Data Fields</div>
@@ -422,12 +426,10 @@ export function WorkoutPopup({ initial, groups, onSave, onClose, onMerge, onDele
                 {stdDataFields.map(f => (
                   <div key={f.id} style={{ display: "flex", alignItems: "center", gap: 4, padding: "4px 8px", borderRadius: 6, background: COLORS.inner, border: `1px solid ${COLORS.border}`, fontSize: 12 }}>
                     {f.name}{f.unit ? ` (${f.unit})` : ""}
-                    {!["weight","reps"].includes(f.id) && (
-                      <button onClick={() => setStdDataFields(prev => prev.filter(df => df.id !== f.id))} style={{ background: "none", border: "none", color: COLORS.red, cursor: "pointer", fontSize: 12, padding: 0 }}>×</button>
-                    )}
+                    <button onClick={() => setStdDataFields(prev => prev.filter(df => df.id !== f.id))} style={{ background: "none", border: "none", color: COLORS.red, cursor: "pointer", fontSize: 12, padding: 0 }}>×</button>
                   </div>
                 ))}
-                <CustomFieldAdder onAdd={fieldName => setStdDataFields(prev => [...prev, { id: generateId(), name: fieldName, type: "custom" as const }])} />
+                <CustomFieldAdder existingFieldIds={stdDataFields.map(f => f.id)} onAdd={field => setStdDataFields(prev => [...prev, field])} />
               </div>
             </div>
           </div>
@@ -475,8 +477,7 @@ export function WorkoutPopup({ initial, groups, onSave, onClose, onMerge, onDele
                     {(
                       <button
                         onClick={() => removeVariant(v.id)}
-                        disabled={variants.length === 1}
-                        style={{ background: "none", border: "none", color: variants.length === 1 ? COLORS.border : COLORS.red, cursor: variants.length === 1 ? "default" : "pointer", fontSize: 14, padding: "0 2px" }}
+                        style={{ background: "none", border: "none", color: COLORS.red, cursor: "pointer", fontSize: 14, padding: "0 2px" }}
                       >×</button>
                     )}
                   </div>
@@ -519,21 +520,23 @@ export function WorkoutPopup({ initial, groups, onSave, onClose, onMerge, onDele
                               </div>
                               {/* Sub-variant sets + data fields */}
                               <div style={{ padding: "8px 10px", background: COLORS.card, display: "flex", flexDirection: "column", gap: 8, borderTop: `1px solid ${COLORS.border}` }}>
-                                <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+                                <div style={{ display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
                                   <div>
                                     <div style={{ fontSize: 10, color: COLORS.dim, fontWeight: 700, textTransform: "uppercase" as const, marginBottom: 4 }}>Sets</div>
                                     <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
                                       <button onClick={() => setVariants(prev => prev.map(pv => pv.id !== v.id ? pv : { ...pv, subvariants: (pv.subvariants ?? []).map(s => s.id === sub.id ? { ...s, sets: Math.max(1, (s.sets ?? v.sets) - 1) } : s) }))} style={{ background: COLORS.border, border: "none", color: COLORS.text, borderRadius: 4, width: 20, height: 20, cursor: "pointer", fontSize: 13 }}>−</button>
-                                      <span style={{ fontSize: 13, fontWeight: 600, minWidth: 18, textAlign: "center" as const }}>{sub.sets ?? v.sets}</span>
+                                      <input type="number" inputMode="numeric" pattern="[0-9]*" value={sub.sets ?? v.sets} onChange={e => setVariants(prev => prev.map(pv => pv.id !== v.id ? pv : { ...pv, subvariants: (pv.subvariants ?? []).map(s => s.id === sub.id ? { ...s, sets: Math.max(1, parseInt(e.target.value) || 1) } : s) }))} style={{ border: `1px solid ${COLORS.border}`, borderRadius: 6, background: COLORS.inner, color: COLORS.text, outline: "none", textAlign: "center", boxSizing: "border-box", fontSize: 11, padding: "3px 4px", width: 38 }} />
                                       <button onClick={() => setVariants(prev => prev.map(pv => pv.id !== v.id ? pv : { ...pv, subvariants: (pv.subvariants ?? []).map(s => s.id === sub.id ? { ...s, sets: (s.sets ?? v.sets) + 1 } : s) }))} style={{ background: COLORS.border, border: "none", color: COLORS.text, borderRadius: 4, width: 20, height: 20, cursor: "pointer", fontSize: 13 }}>+</button>
                                     </div>
                                   </div>
-                                  <div style={{ flex: 1 }}>
-                                    <div style={{ fontSize: 10, color: COLORS.dim, fontWeight: 700, textTransform: "uppercase" as const, marginBottom: 4 }}>Rep Range</div>
-                                    <select value={sub.repRange ?? v.repRange} onChange={e => setVariants(prev => prev.map(pv => pv.id !== v.id ? pv : { ...pv, subvariants: (pv.subvariants ?? []).map(s => s.id === sub.id ? { ...s, repRange: e.target.value } : s) }))} style={inp({ padding: "4px 6px", fontSize: 11 })}>
-                                      {REP_PRESETS.map(r => <option key={r} value={r}>{r} reps</option>)}
-                                    </select>
-                                  </div>
+                                  {(sub.dataFields ?? v.dataFields).some(f => f.id === "reps") && (
+                                    <div>
+                                      <RepRangeInput value={sub.repRange ?? v.repRange} onChange={val => setVariants(prev => prev.map(pv => pv.id !== v.id ? pv : { ...pv, subvariants: (pv.subvariants ?? []).map(s => s.id === sub.id ? { ...s, repRange: val } : s) }))} small label="Reps" />
+                                    </div>
+                                  )}
+                                  {(sub.dataFields ?? v.dataFields).filter(f => !["reps"].includes(f.id)).map(f => (
+                                    <DataFieldDisplay key={f.id} field={f} onChange={updated => setVariants(prev => prev.map(pv => pv.id !== v.id ? pv : { ...pv, subvariants: (pv.subvariants ?? []).map(s => s.id === sub.id ? { ...s, dataFields: (s.dataFields ?? v.dataFields).map(df => df.id === updated.id ? updated : df) } : s) }))} />
+                                  ))}
                                 </div>
                                 <div>
                                   <div style={{ fontSize: 10, color: COLORS.dim, fontWeight: 700, textTransform: "uppercase" as const, marginBottom: 4 }}>Data Fields</div>
@@ -541,12 +544,10 @@ export function WorkoutPopup({ initial, groups, onSave, onClose, onMerge, onDele
                                     {(sub.dataFields ?? v.dataFields).map(f => (
                                       <div key={f.id} style={{ display: "flex", alignItems: "center", gap: 3, padding: "3px 7px", borderRadius: 6, background: COLORS.inner, border: `1px solid ${COLORS.border}`, fontSize: 11 }}>
                                         {f.name}{f.unit ? ` (${f.unit})` : ""}
-                                        {!["weight","reps"].includes(f.id) && (
-                                          <button onClick={() => setVariants(prev => prev.map(pv => pv.id !== v.id ? pv : { ...pv, subvariants: (pv.subvariants ?? []).map(s => s.id === sub.id ? { ...s, dataFields: (s.dataFields ?? v.dataFields).filter(df => df.id !== f.id) } : s) }))} style={{ background: "none", border: "none", color: COLORS.red, cursor: "pointer", fontSize: 11, padding: 0 }}>×</button>
-                                        )}
+                                        <button onClick={() => setVariants(prev => prev.map(pv => pv.id !== v.id ? pv : { ...pv, subvariants: (pv.subvariants ?? []).map(s => s.id === sub.id ? { ...s, dataFields: (s.dataFields ?? v.dataFields).filter(df => df.id !== f.id) } : s) }))} style={{ background: "none", border: "none", color: COLORS.red, cursor: "pointer", fontSize: 11, padding: 0 }}>×</button>
                                       </div>
                                     ))}
-                                    <CustomFieldAdder onAdd={fieldName => setVariants(prev => prev.map(pv => pv.id !== v.id ? pv : { ...pv, subvariants: (pv.subvariants ?? []).map(s => s.id === sub.id ? { ...s, dataFields: [...(s.dataFields ?? v.dataFields), { id: generateId(), name: fieldName, type: "custom" as const }] } : s) }))} />
+                                    <CustomFieldAdder existingFieldIds={(sub.dataFields ?? v.dataFields).map(f => f.id)} onAdd={field => setVariants(prev => prev.map(pv => pv.id !== v.id ? pv : { ...pv, subvariants: (pv.subvariants ?? []).map(s => s.id === sub.id ? { ...s, dataFields: [...(s.dataFields ?? v.dataFields), field] } : s) }))} />
                                   </div>
                                 </div>
                               </div>
@@ -560,21 +561,23 @@ export function WorkoutPopup({ initial, groups, onSave, onClose, onMerge, onDele
                         </div>
 
                       {/* Sets + Rep Range — only show at variant level if no subvariants */}
-                      {(v.subvariants?.length ?? 0) === 0 && <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+                      {(v.subvariants?.length ?? 0) === 0 && <div style={{ display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
                         <div>
                           <div style={{ ...sectionLabel, marginBottom: 4 }}>Sets</div>
                           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                             <button onClick={() => updateVariant(v.id, { sets: Math.max(1, v.sets - 1) })} style={{ background: COLORS.border, border: "none", color: COLORS.text, borderRadius: 4, width: 22, height: 22, cursor: "pointer", fontSize: 14 }}>−</button>
-                            <span style={{ fontSize: 14, fontWeight: 600, minWidth: 20, textAlign: "center" }}>{v.sets}</span>
+                            <input type="number" inputMode="numeric" pattern="[0-9]*" value={v.sets} onChange={e => updateVariant(v.id, { sets: Math.max(1, parseInt(e.target.value) || 1) })} style={{ border: `1px solid ${COLORS.border}`, borderRadius: 6, background: COLORS.inner, color: COLORS.text, outline: "none", textAlign: "center", boxSizing: "border-box", fontSize: 12, padding: "5px 6px", width: 44 }} />
                             <button onClick={() => updateVariant(v.id, { sets: v.sets + 1 })} style={{ background: COLORS.border, border: "none", color: COLORS.text, borderRadius: 4, width: 22, height: 22, cursor: "pointer", fontSize: 14 }}>+</button>
                           </div>
                         </div>
-                        <div style={{ flex: 1 }}>
-                          <div style={{ ...sectionLabel, marginBottom: 4 }}>Rep Range</div>
-                          <select value={v.repRange} onChange={e => updateVariant(v.id, { repRange: e.target.value })} style={inp({ padding: "5px 8px", fontSize: 12 })}>
-                            {REP_PRESETS.map(r => <option key={r} value={r}>{r} reps</option>)}
-                          </select>
-                        </div>
+                        {v.dataFields.some(f => f.id === "reps") && (
+                          <div>
+                            <RepRangeInput value={v.repRange} onChange={val => updateVariant(v.id, { repRange: val })} label="Reps" />
+                          </div>
+                        )}
+                        {v.dataFields.filter(f => !["reps"].includes(f.id)).map(f => (
+                          <DataFieldDisplay key={f.id} field={f} onChange={updated => updateVariant(v.id, { dataFields: v.dataFields.map(df => df.id === updated.id ? updated : df) })} />
+                        ))}
                       </div>}
 
                       {/* Data Fields — only show at variant level if no subvariants */}
@@ -584,12 +587,10 @@ export function WorkoutPopup({ initial, groups, onSave, onClose, onMerge, onDele
                           {v.dataFields.map(f => (
                             <div key={f.id} style={{ display: "flex", alignItems: "center", gap: 4, padding: "4px 8px", borderRadius: 6, background: COLORS.inner, border: `1px solid ${COLORS.border}`, fontSize: 12 }}>
                               {f.name}{f.unit ? ` (${f.unit})` : ""}
-                              {!["weight","reps"].includes(f.id) && (
-                                <button onClick={() => removeDataField(v.id, f.id)} style={{ background: "none", border: "none", color: COLORS.red, cursor: "pointer", fontSize: 12, padding: 0 }}>×</button>
-                              )}
+                              <button onClick={() => removeDataField(v.id, f.id)} style={{ background: "none", border: "none", color: COLORS.red, cursor: "pointer", fontSize: 12, padding: 0 }}>×</button>
                             </div>
                           ))}
-                          <CustomFieldAdder onAdd={fieldName => addDataField(v.id, { id: generateId(), name: fieldName, type: "custom" })} />
+                          <CustomFieldAdder existingFieldIds={v.dataFields.map(f => f.id)} onAdd={field => addDataField(v.id, field)} />
                         </div>
                       </div>}
 
@@ -604,7 +605,7 @@ export function WorkoutPopup({ initial, groups, onSave, onClose, onMerge, onDele
           <div style={{ marginTop: 8 }}>
               {!showAddVariant ? (
                 <button
-                  onClick={() => setShowAddVariant(true)}
+                  onClick={() => { setShowAddVariant(true); setExpandedVariantId(null); }}
                   style={{ ...ghostBtn({ width: "100%", fontSize: 13, borderStyle: "dashed" }) }}
                 >
                   + Add Variant
@@ -689,31 +690,118 @@ export function WorkoutPopup({ initial, groups, onSave, onClose, onMerge, onDele
           </button>
         </div>
       </div>
-    </div>
+
+      {/* Bottom — Daily Tasks */}
+      <div style={{ ...colStyle, flexShrink: 0, opacity: mergeSource ? 0.3 : 1, pointerEvents: mergeSource ? "none" : "auto", transition: "opacity 0.2s" }}>
+        <div style={colHeader()}>
+          <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>Daily Tasks</h2>
+          <p style={{ color: COLORS.dim, fontSize: 11, margin: "4px 0 0" }}>Appear every day on home screen</p>
+        </div>
+        <div style={{ padding: "10px 12px", display: "flex", flexWrap: "wrap", gap: 8 }}>
+          {tasks.map((task, i) => (
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 180, flex: "1 1 180px" }}>
+              <span style={{ color: COLORS.dim, fontSize: 13, minWidth: 18 }}>{i + 1}.</span>
+              <input
+                style={inp({ padding: "6px 8px", fontSize: 13 })}
+                placeholder={`Task ${i + 1}…`}
+                value={task}
+                onChange={e => { const u = [...tasks]; u[i] = e.target.value; setTasks(u); }}
+              />
+            </div>
+          ))}
+        </div>
+      </div>
+      </div>
   );
 }
 
 // ── Small helper components used inside the modal ─────────────────────────────
 
-function CustomFieldAdder({ onAdd }: { onAdd: (name: string) => void }) {
-  const [val, setVal] = useState("");
+const DATA_FIELD_UNIT_OPTIONS: Record<string, string[]> = {
+  time: ["min:sec", "sec"],
+  distance: ["m", "km", "mi"],
+  speed: ["km/h", "mph"],
+};
+
+function DataFieldDisplay({ field, onChange }: { field: DataField; onChange: (f: DataField) => void }) {
+  const [showMenu, setShowMenu] = useState(false);
+  const options = DATA_FIELD_UNIT_OPTIONS[field.id];
+  return (
+    <div>
+      <div style={{ fontSize: 12, color: COLORS.dim, fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: 0.5, marginBottom: 4 }}>{field.name}</div>
+      {options ? (
+        <div style={{ position: "relative" }}>
+          <button
+            onClick={() => setShowMenu(m => !m)}
+            onBlur={() => setTimeout(() => setShowMenu(false), 150)}
+            style={{ padding: "3px 8px", borderRadius: 6, border: `1px solid ${COLORS.border}`, background: COLORS.inner, color: COLORS.dim, cursor: "pointer", fontSize: 11, fontWeight: 600, display: "flex", alignItems: "center", gap: 3, whiteSpace: "nowrap" as const }}
+          >
+            {field.unit ?? options[0]} <span style={{ fontSize: 8 }}>▾</span>
+          </button>
+          {showMenu && (
+            <div style={{ position: "absolute", top: "100%", left: 0, marginTop: 3, background: COLORS.card, border: `1px solid ${COLORS.border}`, borderRadius: 8, zIndex: 20, minWidth: 80, overflow: "hidden" }}>
+              {options.map(opt => (
+                <div key={opt}
+                  onMouseDown={() => { onChange({ ...field, unit: opt }); setShowMenu(false); }}
+                  style={{ padding: "7px 12px", fontSize: 12, cursor: "pointer", fontWeight: field.unit === opt ? 700 : 400, color: field.unit === opt ? COLORS.accent : COLORS.text, background: "transparent" }}
+                  onMouseEnter={e => (e.currentTarget as HTMLDivElement).style.background = COLORS.inner}
+                  onMouseLeave={e => (e.currentTarget as HTMLDivElement).style.background = "transparent"}
+                >{opt}</div>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : (
+        <span style={{ fontSize: 12, color: COLORS.dim }}>{field.unit ?? "—"}</span>
+      )}
+    </div>
+  );
+}
+
+function CustomFieldAdder({ onAdd, existingFieldIds }: { onAdd: (field: DataField) => void; existingFieldIds: string[] }) {
   const [open, setOpen] = useState(false);
+  const [customVal, setCustomVal] = useState("");
+  const [showCustom, setShowCustom] = useState(false);
+
   if (!open) return (
     <button onClick={() => setOpen(true)} style={ghostBtn({ padding: "3px 8px", fontSize: 11, borderStyle: "dashed" })}>
-      + Custom Field
+      + Add Data Field
     </button>
   );
+
   return (
-    <div style={{ display: "flex", gap: 4 }}>
-      <input autoFocus value={val} onChange={e => setVal(e.target.value)}
-        placeholder="Field name…"
-        style={inp({ padding: "3px 6px", fontSize: 11, width: 110 })}
-        onKeyDown={e => { if (e.key === "Enter" && val.trim()) { onAdd(val.trim()); setVal(""); setOpen(false); } }}
-      />
-      <button onClick={() => { if (val.trim()) { onAdd(val.trim()); setVal(""); setOpen(false); } }}
-        style={accentBtn({ padding: "3px 8px", fontSize: 11 })}>Add</button>
-      <button onClick={() => { setVal(""); setOpen(false); }}
-        style={ghostBtn({ padding: "3px 8px", fontSize: 11 })}>×</button>
+    <div style={{ border: `1px solid ${COLORS.border}`, borderRadius: 8, padding: 8, marginTop: 4, width: "100%" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+        <span style={{ fontSize: 11, color: COLORS.dim, fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: 0.5 }}>Add Data Field</span>
+        <button onClick={() => { setOpen(false); setShowCustom(false); setCustomVal(""); }} style={{ background: "none", border: "none", color: COLORS.dim, cursor: "pointer", fontSize: 14, lineHeight: 1 }}>×</button>
+      </div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginBottom: showCustom ? 8 : 0 }}>
+        {OPTIONAL_DATA_FIELDS.filter(f => !existingFieldIds.includes(f.id)).map(f => (
+          <button key={f.id} onClick={() => { onAdd(f); setOpen(false); }}
+            style={{ padding: "3px 10px", borderRadius: 20, fontSize: 11, fontWeight: 600, border: `1px solid ${COLORS.accent}`, background: "transparent", color: COLORS.accent, cursor: "pointer" }}>
+            {f.name}{f.unit ? ` (${f.unit})` : ""}
+          </button>
+        ))}
+        {!showCustom && (
+          <button onClick={() => setShowCustom(true)}
+            style={{ padding: "3px 10px", borderRadius: 20, fontSize: 11, fontWeight: 600, border: `1px dashed ${COLORS.dim}`, background: "transparent", color: COLORS.dim, cursor: "pointer" }}>
+            + Custom
+          </button>
+        )}
+      </div>
+      {showCustom && (
+        <div style={{ display: "flex", gap: 4, marginTop: 6 }}>
+          <input autoFocus value={customVal} onChange={e => setCustomVal(e.target.value)}
+            placeholder="Field name…"
+            style={inp({ padding: "3px 6px", fontSize: 11, width: 110 })}
+            onKeyDown={e => { if (e.key === "Enter" && customVal.trim()) { onAdd({ id: generateId(), name: customVal.trim(), type: "custom" }); setCustomVal(""); setOpen(false); setShowCustom(false); } }}
+          />
+          <button onClick={() => { if (customVal.trim()) { onAdd({ id: generateId(), name: customVal.trim(), type: "custom" }); setCustomVal(""); setOpen(false); setShowCustom(false); } }}
+            style={accentBtn({ padding: "3px 8px", fontSize: 11 })}>Add</button>
+          <button onClick={() => { setShowCustom(false); setCustomVal(""); }}
+            style={ghostBtn({ padding: "3px 8px", fontSize: 11 })}>×</button>
+        </div>
+      )}
     </div>
   );
 }
@@ -816,6 +904,69 @@ function SubvariantAdder({ onAdd, existingNames }: { onAdd: (name: string) => vo
   );
 }
 
+function RepRangeInput({ value, onChange, small, label }: { value: string; onChange: (v: string) => void; small?: boolean; label?: string }) {
+  const isFixed = !value.includes("-");
+  const [min, max] = isFixed ? [value, ""] : value.split("-");
+  const [showMenu, setShowMenu] = useState(false);
+  const sz = small ? { fontSize: 11, padding: "3px 4px", width: 38 } : { fontSize: 12, padding: "5px 6px", width: 44 };
+  const base: React.CSSProperties = { border: `1px solid ${COLORS.border}`, borderRadius: 6, background: COLORS.inner, color: COLORS.text, outline: "none", textAlign: "center" as const, boxSizing: "border-box" as const };
+  const modeBtn: React.CSSProperties = { padding: small ? "2px 6px" : "3px 8px", borderRadius: 6, border: `1px solid ${COLORS.border}`, background: COLORS.inner, color: COLORS.dim, cursor: "pointer", fontSize: small ? 10 : 11, fontWeight: 600, display: "flex", alignItems: "center", gap: 3, whiteSpace: "nowrap" as const, flexShrink: 0 };
+
+  const dropdown = (
+    <div style={{ position: "relative" }}>
+          <button
+            onClick={() => setShowMenu(m => !m)}
+            onBlur={() => setTimeout(() => setShowMenu(false), 150)}
+            style={modeBtn}
+          >
+            {isFixed ? "Fixed" : "Range"} <span style={{ fontSize: 8 }}>▾</span>
+          </button>
+          {showMenu && (
+            <div style={{ position: "absolute", top: "100%", left: 0, marginTop: 3, background: COLORS.card, border: `1px solid ${COLORS.border}`, borderRadius: 8, zIndex: 20, minWidth: 80, overflow: "hidden" }}>
+              {["Range", "Fixed"].map(opt => {
+                const active = (opt === "Fixed") === isFixed;
+                return (
+                  <div
+                    key={opt}
+                    onMouseDown={() => {
+                      if (opt === "Fixed") onChange(min || "");
+                      else onChange(`${min || ""}-${min || ""}`);
+                      setShowMenu(false);
+                    }}
+                    style={{ padding: "7px 12px", fontSize: 12, cursor: "pointer", fontWeight: active ? 700 : 400, color: active ? COLORS.accent : COLORS.text, background: "transparent" }}
+                    onMouseEnter={e => (e.currentTarget as HTMLDivElement).style.background = COLORS.inner}
+                    onMouseLeave={e => (e.currentTarget as HTMLDivElement).style.background = "transparent"}
+                  >
+                    {opt}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+  );
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+      {label && <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 0 }}><span style={{ fontSize: 12, color: COLORS.dim, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>{label}</span>{dropdown}</div>}
+      <div style={{ display: "flex", alignItems: "center", gap: 4 }}>{!label && dropdown}
+        {isFixed ? (
+          <>
+            <input type="number" inputMode="numeric" pattern="[0-9]*" style={{ ...base, ...sz }} value={min ?? ""} onChange={e => onChange(e.target.value)} />
+            <span style={{ color: COLORS.dim, fontSize: small ? 11 : 12 }}>reps</span>
+          </>
+        ) : (
+          <>
+            <input type="number" inputMode="numeric" pattern="[0-9]*" style={{ ...base, ...sz }} value={min ?? ""} onChange={e => onChange(`${e.target.value}-${max ?? ""}`)} />
+            <span style={{ color: COLORS.dim, fontSize: small ? 11 : 12 }}>–</span>
+            <input type="number" inputMode="numeric" pattern="[0-9]*" style={{ ...base, ...sz }} value={max ?? ""} onChange={e => onChange(`${min ?? ""}-${e.target.value}`)} />
+            <span style={{ color: COLORS.dim, fontSize: small ? 11 : 12 }}>reps</span>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
 // ─── Template exercise row helpers ───────────────────────────────────────────
 
 function TemplateExRow({ ex, tid, i, total, onMove, onUpdate, onRemove }: {
@@ -840,13 +991,7 @@ function TemplateExRow({ ex, tid, i, total, onMove, onUpdate, onRemove }: {
         <span style={{ fontSize: 12, minWidth: 16, textAlign: "center" }}>{ex.sets}</span>
         <button onClick={() => onUpdate("sets", ex.sets + 1)} style={{ background: COLORS.border, border: "none", color: COLORS.text, borderRadius: 4, width: 20, height: 20, cursor: "pointer", fontSize: 13, lineHeight: 1 }}>+</button>
       </div>
-      <select
-        value={ex.repRange}
-        onChange={e => onUpdate("repRange", e.target.value)}
-        style={{ ...inp({ padding: "4px 6px", fontSize: 12, width: "100%" }) }}
-      >
-        {REP_PRESETS.map(r => <option key={r} value={r}>{r} reps</option>)}
-      </select>
+      <RepRangeInput value={ex.repRange} onChange={val => onUpdate("repRange", val)} small />
       <button onClick={onRemove} style={{ background: "none", border: "none", color: COLORS.red, cursor: "pointer", fontSize: 14, padding: 0, textAlign: "center" }}>✕</button>
     </div>
   );
@@ -923,6 +1068,9 @@ export default function TemplatesPage({
   const [groupNameError, setGroupNameError]     = useState<string | null>(null);
   const [deletingExercise, setDeletingExercise] = useState<Exercise | null>(null);
   const [prefillExercise, setPrefillExercise] = useState<Exercise | null>(null);
+  const [deletingTemplateId, setDeletingTemplateId] = useState<string | null>(null);
+  const [templatesCollapsed, setTemplatesCollapsed] = useState(false);
+  const [workoutsCollapsed, setWorkoutsCollapsed] = useState(false);
 
   // ── Merge mode state ────────────────────────────────────────────────────────
   const [mergeSource, setMergeSource]           = useState<Exercise | null>(null);
@@ -1218,43 +1366,51 @@ export default function TemplatesPage({
         </div>
       )}
 
-      {/* 3-column grid */}
-      <div style={{ display: "grid", gridTemplateColumns: "200px 1fr 1fr", gap: 16, flex: 1, minHeight: 0 }}>
-
-        {/* ═══════════════════════════════════════════════════════════════════
-            COL 1 — Daily Tasks
-        ═══════════════════════════════════════════════════════════════════ */}
-        <div style={{ ...colStyle, opacity: mergeSource ? 0.3 : 1, pointerEvents: mergeSource ? "none" : "auto", transition: "opacity 0.2s" }}>
-          <div style={colHeader()}>
-            <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>Daily Tasks</h2>
-            <p style={{ color: COLORS.dim, fontSize: 11, margin: "4px 0 0" }}>Appear every day on home screen</p>
-          </div>
-          <div style={colBody}>
-            <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-              {tasks.map((task, i) => (
-                <div key={i} style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <span style={{ color: COLORS.dim, fontSize: 13, minWidth: 18 }}>{i + 1}.</span>
-                  <input
-                    style={inp({ padding: "6px 8px", fontSize: 13 })}
-                    placeholder={`Task ${i + 1}…`}
-                    value={task}
-                    onChange={e => { const u = [...tasks]; u[i] = e.target.value; setTasks(u); }}
-                  />
-                </div>
-              ))}
+      {/* Delete Template Confirm */}
+      {deletingTemplateId && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1002 }}>
+          <div style={{ background: COLORS.card, borderRadius: 14, padding: 24, width: 400, border: `1px solid ${COLORS.border}`, display: "flex", flexDirection: "column", gap: 14 }}>
+            <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: COLORS.red }}>⚠ Delete "{templates.find(t => t.id === deletingTemplateId)?.name}"?</h3>
+            <p style={{ margin: 0, fontSize: 13, color: COLORS.dim, lineHeight: 1.6 }}>
+              This will permanently delete this session template. Your workout library and logged history will not be affected.
+            </p>
+            <p style={{ margin: 0, fontSize: 12, color: COLORS.red, fontWeight: 600 }}>This cannot be undone.</p>
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button onClick={() => setDeletingTemplateId(null)} style={{ padding: "8px 16px", borderRadius: 8, border: `1px solid ${COLORS.border}`, background: "transparent", color: COLORS.dim, cursor: "pointer", fontWeight: 600, fontSize: 13 }}>
+                Cancel
+              </button>
+              <button
+                onClick={() => { deleteTemplate(deletingTemplateId); setDeletingTemplateId(null); }}
+                style={{ padding: "8px 16px", borderRadius: 8, border: "none", background: COLORS.red, color: "#fff", cursor: "pointer", fontWeight: 700, fontSize: 13 }}
+              >
+                Delete Template
+              </button>
             </div>
           </div>
         </div>
+      )}
+
+      {/* Main layout */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 16, flex: 1, minHeight: 0 }}>
+      {/* Top row — Session Templates + Workouts */}
+      <div style={{ display: "grid", gridTemplateColumns: `${templatesCollapsed ? "40px" : "1fr"} ${workoutsCollapsed ? "40px" : "1fr"}`, gap: 16, flex: 1, minHeight: 0, transition: "grid-template-columns 0.2s" }}>
 
         {/* ═══════════════════════════════════════════════════════════════════
-            COL 2 — Session Templates
+            COL 1 — Session Templates
         ═══════════════════════════════════════════════════════════════════ */}
         <div style={{ ...colStyle, opacity: mergeSource ? 0.3 : 1, pointerEvents: mergeSource ? "none" : "auto", transition: "opacity 0.2s" }}>
           <div style={colHeader()}>
-            <h2 style={{ margin: "0 0 10px", fontSize: 18, fontWeight: 700 }}>Session Templates</h2>
-            <button onClick={() => setShowCreate(true)} style={accentBtn({ width: "100%", fontSize: 13 })}>+ New Template</button>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: templatesCollapsed ? 0 : 10 }}>
+              {templatesCollapsed ? (
+                <span style={{ fontSize: 13, fontWeight: 700, writingMode: "vertical-rl" as React.CSSProperties["writingMode"], transform: "rotate(180deg)", color: COLORS.text, cursor: "pointer", padding: "8px 0" }} onClick={() => setTemplatesCollapsed(false)}>Session Templates</span>
+              ) : (
+                <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>Session Templates</h2>
+              )}
+              <button onClick={() => setTemplatesCollapsed(c => !c)} style={{ background: "none", border: "none", color: COLORS.dim, cursor: "pointer", fontSize: 16, padding: "0 2px", flexShrink: 0 }}>{templatesCollapsed ? "▶" : "◀"}</button>
+            </div>
+            {!templatesCollapsed && <button onClick={() => setShowCreate(true)} style={accentBtn({ width: "100%", fontSize: 13 })}>+ New Template</button>}
           </div>
-          <div style={colBody}>
+          <div style={{ ...colBody, display: templatesCollapsed ? "none" : undefined }}>
             {/* Create form */}
             {showCreate && (
               <div style={{ background: COLORS.inner, borderRadius: 10, padding: 14, marginBottom: 10 }}>
@@ -1290,7 +1446,7 @@ export default function TemplatesPage({
                       <button onClick={() => { setEditingId(isEditing ? null : template.id); setShowExPicker(false); }} style={isEditing ? accentBtn({ fontSize: 12, padding: "5px 10px" }) : ghostBtn({ fontSize: 12, padding: "5px 10px" })}>
                         {isEditing ? "Done" : "Edit"}
                       </button>
-                      <button onClick={() => deleteTemplate(template.id)} style={ghostBtn({ fontSize: 12, padding: "5px 10px", color: COLORS.red, borderColor: "transparent" })}>
+                      <button onClick={() => setDeletingTemplateId(template.id)} style={ghostBtn({ fontSize: 12, padding: "5px 10px", color: COLORS.red, borderColor: "transparent" })}>
                         Delete
                       </button>
                     </div>
@@ -1402,8 +1558,15 @@ export default function TemplatesPage({
         <div style={colStyle}>
           {/* Header */}
           <div style={colHeader()}>
-            <h2 style={{ margin: "0 0 10px", fontSize: 18, fontWeight: 700 }}>Workouts</h2>
-            {mergeSource ? (
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: workoutsCollapsed ? 0 : 10 }}>
+              {workoutsCollapsed ? (
+                <span style={{ fontSize: 13, fontWeight: 700, writingMode: "vertical-rl" as React.CSSProperties["writingMode"], transform: "rotate(180deg)", color: COLORS.text, cursor: "pointer", padding: "8px 0" }} onClick={() => setWorkoutsCollapsed(false)}>Workouts</span>
+              ) : (
+                <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>Workouts</h2>
+              )}
+              <button onClick={() => setWorkoutsCollapsed(c => !c)} style={{ background: "none", border: "none", color: COLORS.dim, cursor: "pointer", fontSize: 16, padding: "0 2px", flexShrink: 0 }}>{workoutsCollapsed ? "◀" : "▶"}</button>
+            </div>
+            {!workoutsCollapsed && mergeSource ? (
               <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", background: COLORS.orange + "18", border: `1px solid ${COLORS.orange}`, borderRadius: 8 }}>
                 <span style={{ fontSize: 12, color: COLORS.orange, flex: 1 }}>
                   Select a <strong>Multi-Variant</strong> workout to merge "{mergeSource.name}" into
@@ -1419,7 +1582,7 @@ export default function TemplatesPage({
           </div>
 
           {/* 2D grouped table */}
-          <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
+          <div style={{ flex: 1, minHeight: 0, overflowY: "auto", display: workoutsCollapsed ? "none" : undefined }}>
             {/* Header row */}
             <div style={{ display: "grid", gridTemplateColumns: "140px 1fr", borderBottom: `1px solid ${COLORS.border}`, position: "sticky", top: 0, background: COLORS.card, zIndex: 1 }}>
               <div style={{ padding: "8px 12px", fontSize: 10, color: COLORS.dim, fontWeight: 700, textTransform: "uppercase", borderRight: `1px solid ${COLORS.border}` }}>Group</div>
@@ -1541,6 +1704,28 @@ export default function TemplatesPage({
             })()}
           </div>
         </div>
+      </div>
+
+      {/* Bottom row — Daily Tasks */}
+      <div style={{ ...colStyle, flexShrink: 0, height: 160, opacity: mergeSource ? 0.3 : 1, pointerEvents: mergeSource ? "none" : "auto", transition: "opacity 0.2s" }}>
+        <div style={colHeader()}>
+          <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>Daily Tasks</h2>
+          <p style={{ color: COLORS.dim, fontSize: 11, margin: "4px 0 0" }}>Appear every day on home screen</p>
+        </div>
+        <div style={{ padding: "10px 12px", display: "flex", flexWrap: "wrap", gap: 8 }}>
+          {tasks.map((task, i) => (
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 180, flex: "1 1 180px" }}>
+              <span style={{ color: COLORS.dim, fontSize: 13, minWidth: 18 }}>{i + 1}.</span>
+              <input
+                style={inp({ padding: "6px 8px", fontSize: 13 })}
+                placeholder={`Task ${i + 1}…`}
+                value={task}
+                onChange={e => { const u = [...tasks]; u[i] = e.target.value; setTasks(u); }}
+              />
+            </div>
+          ))}
+        </div>
+      </div>
       </div>
     </div>
   );
