@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   COLORS, generateId,
   EQUIPMENT_PRESETS, DEFAULT_DATA_FIELDS, OPTIONAL_DATA_FIELDS,
@@ -1050,7 +1050,23 @@ export default function TemplatesPage({
   const [prefillExercise, setPrefillExercise] = useState<Exercise | null>(null);
   const [deletingTemplateId, setDeletingTemplateId] = useState<string | null>(null);
   const [templatesCollapsed, setTemplatesCollapsed] = useState(false);
-  const [workoutsCollapsed, setWorkoutsCollapsed] = useState(false);
+  const [workoutsCollapsed, setWorkoutsCollapsed] = useState(typeof window !== "undefined" ? window.innerWidth < 1024 : true);
+  const [isDesktop, setIsDesktop] = useState(typeof window !== "undefined" ? window.innerWidth >= 1024 : false);
+  useEffect(() => {
+    const handler = () => {
+      const desktop = window.innerWidth >= 1024;
+      setIsDesktop(desktop);
+      if (desktop) {
+        setTemplatesCollapsed(false);
+        setWorkoutsCollapsed(false);
+      } else {
+        setTemplatesCollapsed(false);
+        setWorkoutsCollapsed(true);
+      }
+    };
+    window.addEventListener("resize", handler);
+    return () => window.removeEventListener("resize", handler);
+  }, []);
 
   // ── Merge mode state ────────────────────────────────────────────────────────
   const [mergeSource, setMergeSource]           = useState<Exercise | null>(null);
@@ -1373,10 +1389,26 @@ export default function TemplatesPage({
       {/* Main layout */}
       <div style={{ display: "flex", flexDirection: "column", gap: 16, flex: 1, minHeight: 0 }}>
       {/* Top row — Session Templates + Workouts */}
-      <div style={{ display: "grid", gridTemplateColumns: `${templatesCollapsed ? "0px" : "1fr"} ${workoutsCollapsed ? "0px" : "1fr"}`, gap: templatesCollapsed || workoutsCollapsed ? 0 : 16, flex: 1, minHeight: 0, transition: "grid-template-columns 0.2s", overflow: "hidden" }}>
+      <div style={{ display: "grid", gridTemplateColumns: isDesktop ? "220px 1fr 1fr" : `${templatesCollapsed ? "0px" : "1fr"} ${workoutsCollapsed ? "0px" : "1fr"}`, gap: isDesktop ? 16 : (templatesCollapsed || workoutsCollapsed ? 0 : 16), flex: 1, minHeight: 0, transition: "grid-template-columns 0.2s", overflow: "hidden" }}>
+
+        {/* COL 1 — Daily Tasks (desktop only, first column) */}
+        {isDesktop && <div style={{ ...colStyle, opacity: mergeSource ? 0.3 : 1, pointerEvents: mergeSource ? "none" : "auto", transition: "opacity 0.2s" }}>
+          <div style={colHeader()}>
+            <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>Daily Tasks</h2>
+            <p style={{ color: COLORS.dim, fontSize: 11, margin: "4px 0 0" }}>Appear every day on home screen</p>
+          </div>
+          <div style={{ padding: "10px 12px", display: "grid", gridTemplateColumns: "1fr", gap: 8 }}>
+            {tasks.map((task, i) => (
+              <div key={i} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <span style={{ color: COLORS.dim, fontSize: 13, minWidth: 18 }}>{i + 1}.</span>
+                <input style={inp({ padding: "6px 8px", fontSize: 13 })} placeholder={`Task ${i + 1}…`} value={task} onChange={e => { const u = [...tasks]; u[i] = e.target.value; setTasks(u); }} />
+              </div>
+            ))}
+          </div>
+        </div>}
 
         {/* ═══════════════════════════════════════════════════════════════════
-            COL 1 — Session Templates
+            COL 2 — Session Templates
         ═══════════════════════════════════════════════════════════════════ */}
         <div style={{ ...colStyle, opacity: mergeSource ? 0.3 : 1, pointerEvents: mergeSource ? "none" : "auto", transition: "opacity 0.2s" }}>
           <div style={colHeader()}>
@@ -1386,7 +1418,7 @@ export default function TemplatesPage({
               ) : (
                 <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>Session Templates</h2>
               )}
-              <button onClick={() => { setTemplatesCollapsed(true); setWorkoutsCollapsed(false); }} style={{ background: "none", border: "none", color: COLORS.dim, cursor: "pointer", fontSize: 13, padding: "0 2px", flexShrink: 0, display: "flex", alignItems: "center", gap: 4, fontWeight: 600 }}>▶ <span>Workouts</span></button>
+              {!isDesktop && <button onClick={() => { setTemplatesCollapsed(true); setWorkoutsCollapsed(false); }} style={{ background: "none", border: "none", color: COLORS.dim, cursor: "pointer", fontSize: 13, padding: "0 2px", flexShrink: 0, display: "flex", alignItems: "center", gap: 4, fontWeight: 600 }}>▶ <span>Workouts</span></button>}
             </div>
             {!templatesCollapsed && <button onClick={() => setShowCreate(true)} style={accentBtn({ width: "100%", fontSize: 13 })}>+ New Template</button>}
           </div>
@@ -1544,7 +1576,7 @@ export default function TemplatesPage({
               ) : (
                 <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>Workouts</h2>
               )}
-              <button onClick={() => { setTemplatesCollapsed(false); setWorkoutsCollapsed(true); }} style={{ background: "none", border: "none", color: COLORS.dim, cursor: "pointer", fontSize: 13, padding: "0 2px", flexShrink: 0, display: "flex", alignItems: "center", gap: 4, fontWeight: 600 }}>◀ <span>Session Templates</span></button>
+              {!isDesktop && <button onClick={() => { setTemplatesCollapsed(false); setWorkoutsCollapsed(true); }} style={{ background: "none", border: "none", color: COLORS.dim, cursor: "pointer", fontSize: 13, padding: "0 2px", flexShrink: 0, display: "flex", alignItems: "center", gap: 4, fontWeight: 600 }}>◀ <span>Session Templates</span></button>}
             </div>
             {!workoutsCollapsed && mergeSource ? (
               <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", background: COLORS.orange + "18", border: `1px solid ${COLORS.orange}`, borderRadius: 8 }}>
@@ -1684,10 +1716,13 @@ export default function TemplatesPage({
             })()}
           </div>
         </div>
+
+        
       </div>
 
-      {/* Bottom row — Daily Tasks */}
-      <div style={{ ...colStyle, flexShrink: 0, height: "auto", opacity: mergeSource ? 0.3 : 1, pointerEvents: mergeSource ? "none" : "auto", transition: "opacity 0.2s" }}>
+      {/* Bottom row — Daily Tasks — only shown below on mobile */}
+      {isDesktop && (() => null)()}
+      {!isDesktop && <div style={{ ...colStyle, flexShrink: 0, height: "auto", opacity: mergeSource ? 0.3 : 1, pointerEvents: mergeSource ? "none" : "auto", transition: "opacity 0.2s" }}>
         <div style={colHeader()}>
           <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>Daily Tasks</h2>
           <p style={{ color: COLORS.dim, fontSize: 11, margin: "4px 0 0" }}>Appear every day on home screen</p>
@@ -1705,7 +1740,7 @@ export default function TemplatesPage({
             </div>
           ))}
         </div>
-      </div>
+      </div>}
       </div>
     </div>
   );
