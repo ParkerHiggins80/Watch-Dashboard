@@ -154,7 +154,7 @@ export default function App() {
               await import("firebase/firestore");
             const metaRef = doc(db, "users", u.uid, "exerciseIndex", "_meta");
             const metaSnap = await getDocFn(metaRef);
-            if (!metaSnap.exists() || !metaSnap.data()?.backfilled) {
+            if (!metaSnap.exists() || !metaSnap.data()?.backfilled || !metaSnap.data()?.backfilledV2 || !metaSnap.data()?.backfilledV3 || !metaSnap.data()?.backfilledV4) {
               // Load current exercises to get ids
               const userSnap = await getDoc(doc(db, "users", u.uid));
               const userExercises: any[] = userSnap.exists()
@@ -169,9 +169,8 @@ export default function App() {
 
               for (const workout of sorted as any[]) {
                 for (const ex of (workout.exercises || []) as any[]) {
-                  const exDef = userExercises.find(
-                    (e: any) => e.name === ex.name,
-                  );
+                  const exDef = userExercises.find((e: any) => e.name === ex.name)
+                    ?? userExercises.find((e: any) => ex.exerciseId && e.id === ex.exerciseId);
                   if (!exDef?.id) continue;
 
                   if (!indexMap[exDef.id]) {
@@ -211,6 +210,11 @@ export default function App() {
                           ...vSets.map((s: any) => s.weight),
                         );
                     }
+                    // If no variant tags found, attribute all sets to the exercise-level variantName
+                    if (Object.keys(bfVariantWeights).length === 0 && ex.variantName) {
+                      const maxW = Math.max(...workingSets.map((s: any) => s.weight ?? 0));
+                      if (maxW > 0) bfVariantWeights[ex.variantName] = maxW;
+                    }
                   }
                   const bfPoint: any = {
                     date: workout.date,
@@ -242,9 +246,51 @@ export default function App() {
               }
               await bfBatch.commit();
 
+              // ── Backfill V3: re-tag merged workout history ──
+              try {
+                const { collection: col3, getDocs: getDocs3, writeBatch: wb3, doc: doc3 } = await import("firebase/firestore");
+                const allWorkoutsSnap = await getDocs3(col3(db, "users", u.uid, "workouts"));
+                const mergeBatch = wb3(db);
+                let mergeCount = 0;
+                for (const wDoc of allWorkoutsSnap.docs) {
+                  const w = wDoc.data();
+                  const needsUpdate = (w.exercises || []).some(
+                    (ex: any) => ex.name === "Dumbbell Bench PressTEST" || ex.exerciseId === "mmqottxqsvvdtpx"
+                  );
+                  if (!needsUpdate) continue;
+                  const updatedExs = (w.exercises || []).map((ex: any) => {
+                    if (ex.name !== "Dumbbell Bench PressTEST" && ex.exerciseId !== "mmqottxqsvvdtpx") return ex;
+                    return {
+                      ...ex,
+                      name: "Bench PressTEST",
+                      exerciseId: "mmmn4koj30leqg7",
+                      sets: (ex.sets || []).map((s: any) => ({ ...s, variantName: "Dumbbell" })),
+                    };
+                  });
+                  mergeBatch.set(doc3(db, "users", u.uid, "workouts", wDoc.id), { ...w, exercises: updatedExs });
+                  mergeCount++;
+                }
+                if (mergeCount > 0) {
+                  await mergeBatch.commit();
+                  // Force V2 index rebuild on next load by clearing backfilledV2
+                  await setDocFn(metaRef, {
+                    backfilled: true,
+                    backfilledV2: false,
+                    backfilledV3: true,
+                    backfilledAt: Date.now(),
+                  });
+                }
+                console.log(`Merge backfill: re-tagged ${mergeCount} workout(s)`);
+              } catch (err) {
+                console.error("Merge backfill error:", err);
+              }
+
               // Mark backfill complete
               await setDocFn(metaRef, {
                 backfilled: true,
+                backfilledV2: true,
+                backfilledV3: true,
+                backfilledV4: true,
                 backfilledAt: Date.now(),
               });
               console.log("Exercise index backfill complete");
@@ -475,10 +521,16 @@ export default function App() {
       _exercises: exercises,
       _workoutGroups: workoutGroups,
       exercises: template.exercises.map((ex: any) => {
-        const exDef = exercises.find((e: any) => e.name === ex.name);
+        const exDef = exercises.find((e: any) => e.name === ex.name)
+          ?? exercises.find((e: any) => ex.exerciseId && e.id === ex.exerciseId);
+        const defVariant = exDef?.variants?.find((v: any) => v.isDefault);
+        const displayName = defVariant && defVariant.name !== "Standard"
+          ? `${defVariant.name} ${ex.name}`
+          : ex.name;
         return {
-          name: ex.name,
+          name: displayName,
           exerciseId: exDef?.id ?? null,
+          variantName: defVariant?.name ?? null,
           sets: Array.from({ length: ex.sets }, () => ({
             weight: 0,
             reps: 0,

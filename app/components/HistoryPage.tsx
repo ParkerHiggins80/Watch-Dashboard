@@ -31,7 +31,7 @@ export default function HistoryPage({ history, onDeleteWorkout }: HistoryPagePro
   };
 
   return (
-    <div>
+    <div style={{ height: "calc(100vh - 60px)", overflowY: "auto", paddingBottom: 24, boxSizing: "border-box" as const }}>
       <h1 style={{ fontSize: 28, fontWeight: 700, marginBottom: 20 }}>History</h1>
 
       {sorted.length === 0 ? (

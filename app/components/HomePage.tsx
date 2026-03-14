@@ -1981,7 +1981,7 @@ const isToday = selectedDateStr === todayLocal;
                       gridTemplateColumns: "60px 1fr 10px",
                       gap: "0 12px",
                       alignItems: "center",
-                      padding: "10px 12px",
+                      padding: "6px 16px",
                       borderRadius: 8,
                       background: isSelected
                         ? COLORS.accent + "11"

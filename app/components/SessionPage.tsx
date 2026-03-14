@@ -78,6 +78,7 @@ const [mobileBottomTab, setMobileBottomTab] = useState<"previous" | "alltime">("
   // variant selection per exercise index
   const [selectedVariants, setSelectedVariants] = useState<Record<number, string>>({});
   const [indexData, setIndexData] = useState<any[]>([]);
+  const [showVDrop, setShowVDrop] = useState(false);
   
 
   useEffect(() => {
@@ -95,16 +96,34 @@ const [mobileBottomTab, setMobileBottomTab] = useState<"previous" | "alltime">("
   const isMobile = windowWidth < 768;
 
   // ─── Variant helpers ───
-  const getExerciseDef = (name: string) =>
-    (session._exercises || []).find((e: any) => e.name === name);
+  const getExerciseDef = (name: string) => {
+    const exercises: any[] = session._exercises || [];
+    // First try exact name match
+    const byName = exercises.find((e: any) => e.name === name);
+    if (byName) return byName;
+    // Fall back: find the session exercise by display name, then look up by exerciseId
+    const sessionEx = (session.exercises || []).find((e: any) => e.name === name);
+    if (sessionEx?.exerciseId) {
+      return exercises.find((e: any) => e.id === sessionEx.exerciseId);
+    }
+    return null;
+  };
 
   const getActiveVariant = (exIdx: number) => {
-    const def = getExerciseDef(session.exercises?.[exIdx]?.name);
+    const sessionEx = session.exercises?.[exIdx];
+    const def = getExerciseDef(sessionEx?.name);
     if (!def?.variants?.length) return null;
     const selectedId = selectedVariants[exIdx];
     return def.variants.find((v: any) => v.id === selectedId)
       ?? def.variants.find((v: any) => v.isDefault)
       ?? def.variants[0];
+  };
+
+  // Returns the base exercise name (strips any variant prefix)
+  const getBaseName = (exIdx: number) => {
+    const sessionEx = session.exercises?.[exIdx];
+    const def = getExerciseDef(sessionEx?.name);
+    return def?.name ?? sessionEx?.name ?? "";
   };
   const safeExIdx = Math.min(
     currentExerciseIndex,
@@ -130,6 +149,7 @@ const [mobileBottomTab, setMobileBottomTab] = useState<"previous" | "alltime">("
 
   useEffect(() => {
     setCurrentSetIndex(0);
+    setShowVDrop(false);
   }, [currentExerciseIndex]);
 
   // ─── Fetch exercise index from Firestore ───
@@ -142,8 +162,13 @@ const [mobileBottomTab, setMobileBottomTab] = useState<"previous" | "alltime">("
         const { db } = await import("../firebase");
         const uid = getAuth().currentUser?.uid;
         if (!uid) return;
-        const exDef = (session._exercises || []).find((e: any) => e.name === exercise.name);
-        const exId = exDef?.id ?? exercise.name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
+        const sessionEx = (session.exercises || []).find((e: any) => e.name === exercise.name);
+        const exDefByName = (session._exercises || []).find((e: any) => e.name === exercise.name);
+        const exDefById = sessionEx?.exerciseId
+          ? (session._exercises || []).find((e: any) => e.id === sessionEx.exerciseId)
+          : null;
+        const exDef = exDefByName ?? exDefById;
+        const exId = exDef?.id ?? sessionEx?.exerciseId ?? exercise.name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
         const snap = await getDoc(doc(db, "users", uid, "exerciseIndex", exId));
         if (snap.exists()) {
           setIndexData(snap.data().points || []);
@@ -159,23 +184,77 @@ const [mobileBottomTab, setMobileBottomTab] = useState<"previous" | "alltime">("
   }, [exerciseName]);
 
   // ─── Previous workout data ───
-  const getPreviousWorkout = (exerciseName: string) => {
+  const getPreviousWorkout = (exerciseName: string, variantName?: string) => {
     const sorted = [...history].sort((a: any, b: any) =>
       b.date.localeCompare(a.date),
     );
     for (const workout of sorted) {
       const found = workout.exercises.find((e: any) => e.name === exerciseName);
       if (found) {
-        return {
-          date: workout.date,
-          sets: found.sets.filter((s: any) => s.type !== "warmup"),
-        };
+        const sets = found.sets.filter((s: any) => s.type !== "warmup");
+        const hasAnyVariantTags = sets.some((s: any) => s.variantName);
+        const variantSets = variantName && variantName !== "Standard" && hasAnyVariantTags
+          ? sets.filter((s: any) => s.variantName === variantName)
+          : sets;
+        if (variantSets.length === 0) continue;
+        return { date: workout.date, sets: variantSets };
       }
     }
     return null;
   };
 
-  const previousWorkout = getPreviousWorkout(exerciseName);
+  const activeVariantName = activeVariant?.name;
+  useEffect(() => {
+    setTouchedSets(prev => {
+      const next = { ...prev };
+      exercise.sets.forEach((_: any, si: number) => {
+        delete next[`${safeExIdx}-${si}`];
+      });
+      return next;
+    });
+  }, [activeVariantName]);
+  const previousWorkout = useMemo(() => {
+    if (indexData.length === 0) return null;
+    const isMultiVariant = variantList.length > 1;
+    // Walk index points newest-first
+    const sorted = [...indexData].sort((a: any, b: any) => b.date.localeCompare(a.date));
+    for (const point of sorted) {
+      if (isMultiVariant && activeVariantName && activeVariantName !== "Standard") {
+        // Use variantWeights to confirm data exists for this variant
+        // Fall back to checking if this is the default variant and point has maxWeight
+        const defaultVariantName = variantList.find((v: any) => v.isDefault)?.name;
+        const hasVariantData = (point.variantWeights && activeVariantName in point.variantWeights) ||
+          (!point.variantWeights && activeVariantName === defaultVariantName && point.sets?.length > 0);
+        if (!hasVariantData) continue;
+        // Pull actual sets from history for this date, filtered by variant
+        const workout = history.find((w: any) => w.date === point.date);
+        if (!workout) continue;
+        const baseName = getBaseName(safeExIdx);
+        const found = workout.exercises.find((e: any) => e.name === baseName || e.name === exerciseName || (activeVariantName && e.name === `${activeVariantName} ${baseName}`));
+        if (!found) continue;
+        const sets = found.sets.filter((s: any) => s.type !== "warmup" && (s.variantName === activeVariantName || !s.variantName));
+        if (sets.length === 0) {
+          // Fallback: reconstruct from index point
+          return { date: point.date, sets: point.sets ?? [] };
+        }
+        return { date: point.date, sets };
+      } else {
+        // Try to get sets from history first for accuracy
+        if (!point.sets?.length) continue;
+        const workout = history.find((w: any) => w.date === point.date);
+        if (workout) {
+          const baseName = getBaseName(safeExIdx);
+          const found = workout.exercises.find((e: any) => e.name === baseName || e.name === exerciseName);
+          if (found) {
+            const sets = found.sets.filter((s: any) => s.type !== "warmup");
+            if (sets.length > 0) return { date: point.date, sets };
+          }
+        }
+        return { date: point.date, sets: point.sets };
+      }
+    }
+    return null;
+  }, [exerciseName, activeVariantName, indexData, history, selectedVariants]);
 
   // ─── Previous top set ───
   const previousTopSet = useMemo(() => {
@@ -192,35 +271,7 @@ const [mobileBottomTab, setMobileBottomTab] = useState<"previous" | "alltime">("
     return { ...best, date: previousWorkout.date };
   }, [previousWorkout]);
 
-  // ─── Pre-fill sets from previous workout (only for brand new sessions) ───
-  useEffect(() => {
-    if (!previousWorkout) return;
-    if (!session.exercises?.[currentExerciseIndex]?.sets) return;
-    // Don't pre-fill if this exercise already has any user data saved
-    const hasAnyData = session.exercises[currentExerciseIndex].sets.some(
-      (s: any) => s.weight > 0 || s.reps > 0,
-    );
-    if (hasAnyData) return;
-    const updated = { ...session };
-    updated.exercises = [...updated.exercises];
-    const ex = { ...updated.exercises[currentExerciseIndex] };
-    let changed = false;
-    ex.sets = ex.sets.map((s: any, i: number) => {
-      if (s.weight === 0 && s.reps === 0 && previousWorkout.sets[i]) {
-        changed = true;
-        return {
-          ...s,
-          weight: Math.round(previousWorkout.sets[i].weight / 2.5) * 2.5,
-          reps: Math.round(previousWorkout.sets[i].reps),
-        };
-      }
-      return s;
-    });
-    if (changed) {
-      updated.exercises[currentExerciseIndex] = ex;
-      setSession(updated);
-    }
-  }, [currentExerciseIndex, previousWorkout?.date]);
+  
 
   // ─── Chart data — one series per variant ───
   const VARIANT_CHART_COLORS = [
@@ -282,13 +333,15 @@ const [mobileBottomTab, setMobileBottomTab] = useState<"previous" | "alltime">("
   const updateSet = (setIndex: number, field: string, value: any) => {
     const key = `${currentExerciseIndex}-${setIndex}`;
     setTouchedSets((prev) => ({ ...prev, [key]: true }));
+    const variantName = activeVariant?.name ?? null;
     const updatedExercises = session.exercises.map((ex: any, ei: number) =>
       ei !== currentExerciseIndex
         ? ex
         : {
             ...ex,
+            variantName,
             sets: ex.sets.map((s: any, i: number) =>
-              i === setIndex ? { ...s, [field]: value, _touched: true } : s,
+              i === setIndex ? { ...s, [field]: value, _touched: true, variantName } : s,
             ),
           },
     );
@@ -405,13 +458,10 @@ const [mobileBottomTab, setMobileBottomTab] = useState<"previous" | "alltime">("
           ({formatPrevDate(previousWorkout.date)})
         </div>
         <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 2 }}>
-          {exercise.name}
+          {activeVariant && activeVariant.name !== "Standard"
+            ? `${activeVariant.name} ${getBaseName(safeExIdx) || exercise.name}`
+            : getBaseName(safeExIdx) || exercise.name}
         </div>
-        {activeVariant && activeVariant.name !== "Standard" && (
-          <div style={{ fontSize: 12, color: COLORS.accent, marginBottom: 8, fontWeight: 500 }}>
-            {activeVariant.name}
-          </div>
-        )}
         <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
           {previousWorkout.sets.map((s: any, i: number) => (
             <div
@@ -445,7 +495,7 @@ const [mobileBottomTab, setMobileBottomTab] = useState<"previous" | "alltime">("
           padding: "16px 0",
         }}
       >
-        No previous data for {exercise.name}
+        No previous data for {activeVariant && activeVariant.name !== "Standard" ? `${activeVariant.name} ${getBaseName(safeExIdx) || exercise.name}` : getBaseName(safeExIdx) || exercise.name}
       </div>
     );
 
@@ -453,7 +503,7 @@ const [mobileBottomTab, setMobileBottomTab] = useState<"previous" | "alltime">("
     <>
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8, flexWrap: "wrap" }}>
         <h3 style={{ fontSize: 14, fontWeight: 600, margin: 0, color: COLORS.dim }}>
-          All Time — {exercise.name}
+          All Time — {getBaseName(safeExIdx) || exercise.name}
         </h3>
         {chartVariants.length > 1 && (
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -483,7 +533,7 @@ const [mobileBottomTab, setMobileBottomTab] = useState<"previous" | "alltime">("
         </ResponsiveContainer>
       ) : (
         <div style={{ textAlign: "center", color: COLORS.dim, padding: "30px 0", fontSize: 13 }}>
-          No previous data for {exercise.name}.
+          No previous data for {getBaseName(safeExIdx) || exercise.name}.
         </div>
       )}
     </>
@@ -759,18 +809,54 @@ const [mobileBottomTab, setMobileBottomTab] = useState<"previous" | "alltime">("
           </div>
 
           {/* Exercise Name */}
-          <h2
-            style={{
-              fontSize: 20,
-              fontWeight: 700,
-              margin: "0 0 2px",
-              textDecoration: "underline",
-              textDecorationColor: COLORS.accent,
-              textUnderlineOffset: 4,
-            }}
-          >
-            {exercise.name}
-          </h2>
+          {variantList.length > 1 ? (() => {
+            const activeVName = activeVariant?.name ?? "";
+            return (
+              <div style={{ position: "relative", margin: "0 0 2px" }}>
+                <button onClick={() => setShowVDrop(d => !d)} style={{ background: "none", border: "none", padding: 0, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
+                  <h2 style={{ fontSize: 20, fontWeight: 700, margin: 0, textDecoration: "underline", textDecorationColor: COLORS.accent, textUnderlineOffset: 4, color: COLORS.text }}>
+                    {activeVName && activeVName !== "Standard" ? `${activeVName} ${getBaseName(safeExIdx)}` : getBaseName(safeExIdx)}
+                  </h2>
+                  <span style={{ fontSize: 13, color: COLORS.accent }}>▾</span>
+                </button>
+                {showVDrop && (
+                  <>
+                    <div style={{ position: "fixed", inset: 0, zIndex: 49 }} onClick={() => setShowVDrop(false)} />
+                    <div style={{ position: "absolute", top: "100%", left: 0, marginTop: 4, background: COLORS.card, border: `1px solid ${COLORS.border}`, borderRadius: 10, zIndex: 50, minWidth: 180, boxShadow: "0 4px 16px rgba(0,0,0,0.4)", overflow: "hidden" }}>
+                      {variantList.map((v: any) => {
+                        const isActive = activeVariant?.id === v.id;
+                        const hasSubs = (v.subvariants?.length ?? 0) > 0;
+                        return (
+                          <div key={v.id}>
+                            <div
+                              onClick={() => { setSelectedVariants(prev => ({ ...prev, [safeExIdx]: v.id })); if (!hasSubs) setShowVDrop(false); }}
+                              style={{ padding: "9px 14px", cursor: "pointer", fontSize: 13, fontWeight: isActive ? 700 : 400, color: isActive ? COLORS.accent : COLORS.text, background: isActive ? COLORS.accent + "18" : "transparent", borderBottom: `1px solid ${COLORS.border}` }}
+                            >
+                              {v.name}{v.isDefault && <span style={{ marginLeft: 6, fontSize: 11, color: COLORS.dim, fontWeight: 400 }}>default</span>}
+                            </div>
+                            {hasSubs && activeVariant?.id === v.id && v.subvariants.map((s: any) => (
+                              <div key={s.id}
+                                onClick={() => { setSelectedVariants(prev => ({ ...prev, [safeExIdx]: v.id, [`${safeExIdx}_sub`]: s.id })); setShowVDrop(false); }}
+                                style={{ padding: "7px 14px 7px 28px", cursor: "pointer", fontSize: 12, color: COLORS.dim, background: "transparent", borderBottom: `1px solid ${COLORS.border}` }}
+                                onMouseEnter={e => (e.currentTarget.style.background = COLORS.inner)}
+                                onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+                              >
+                                ↳ {s.name}
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
+              </div>
+            );
+          })() : (
+            <h2 style={{ fontSize: 20, fontWeight: 700, margin: "0 0 2px", textDecoration: "underline", textDecorationColor: COLORS.accent, textUnderlineOffset: 4 }}>
+              {exercise.name}
+            </h2>
+          )}
           <div
             style={{
               fontSize: 15,
@@ -855,7 +941,7 @@ const [mobileBottomTab, setMobileBottomTab] = useState<"previous" | "alltime">("
                     fontWeight: 600,
                     boxSizing: "border-box" as const,
                   }}
-                  value={currentSet?.weight || ""}
+                  value={isTouched ? currentSet.weight : (previousWorkout?.sets[currentSetIndex]?.weight || "")}
                   placeholder="0"
                   onFocus={() =>
                     markTouched(currentExerciseIndex, currentSetIndex)
@@ -912,7 +998,7 @@ const [mobileBottomTab, setMobileBottomTab] = useState<"previous" | "alltime">("
                     fontWeight: 600,
                     boxSizing: "border-box" as const,
                   }}
-                  value={currentSet?.reps || ""}
+                  value={isTouched ? currentSet.reps : (previousWorkout?.sets[currentSetIndex]?.reps || "")}
                   placeholder="0"
                   onFocus={() =>
                     markTouched(currentExerciseIndex, currentSetIndex)
@@ -1567,7 +1653,10 @@ const [mobileBottomTab, setMobileBottomTab] = useState<"previous" | "alltime">("
                         textAlign: "left" as const,
                       }}
                     >
-                      {ex.name}
+                      {(() => {
+                        const exDef = (session._exercises || []).find((e: any) => e.id === ex.exerciseId);
+                        return exDef?.name ?? ex.name;
+                      })()}
                     </button>
                     <button
                       onClick={() => removeExercise(i)}
@@ -1750,40 +1839,59 @@ const [mobileBottomTab, setMobileBottomTab] = useState<"previous" | "alltime">("
             <span style={{ fontWeight: 600, color: COLORS.text }}>Today</span> (
             {session.date})
           </div>
-          <h2
-            style={{
-              fontSize: 20,
-              fontWeight: 700,
-              margin: "4px 0 0",
-              textDecoration: "underline",
-              textDecorationColor: COLORS.accent,
-              textUnderlineOffset: 4,
-            }}
-          >
-            {exercise.name}
-          </h2>
-
-          {/* Variant pills */}
-          {variantList.length > 1 && (
-            <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginTop: 8 }}>
-              {variantList.map((v: any) => {
-                const isActive = activeVariant?.id === v.id;
-                return (
-                  <button key={v.id}
-                    onClick={() => setSelectedVariants(prev => ({ ...prev, [safeExIdx]: v.id }))}
-                    style={{
-                      padding: "3px 10px", borderRadius: 20, fontSize: 12, fontWeight: 600,
-                      border: isActive ? "none" : `1px solid ${COLORS.border}`,
-                      background: isActive ? COLORS.accent : "transparent",
-                      color: isActive ? "#fff" : COLORS.dim,
-                      cursor: "pointer",
-                    }}
-                  >
-                    {v.name}
-                  </button>
-                );
-              })}
-            </div>
+          {variantList.length > 1 ? (() => {
+            const activeVName = activeVariant?.name ?? "";
+            return (
+              <div style={{ position: "relative", marginTop: 4 }}>
+                <button
+                  onClick={() => setShowVDrop(d => !d)}
+                  style={{ background: "none", border: "none", padding: 0, cursor: "pointer", textAlign: "left" as const, display: "flex", alignItems: "center", gap: 6 }}
+                >
+                  <h2 style={{ fontSize: 20, fontWeight: 700, margin: 0, textDecoration: "underline", textDecorationColor: COLORS.accent, textUnderlineOffset: 4, color: COLORS.text }}>
+                    {activeVName && activeVName !== "Standard" ? `${activeVName} ${getBaseName(safeExIdx)}` : getBaseName(safeExIdx)}
+                  </h2>
+                  <span style={{ fontSize: 13, color: COLORS.accent, marginTop: 2 }}>▾</span>
+                </button>
+                {showVDrop && (
+                  <>
+                    <div style={{ position: "fixed", inset: 0, zIndex: 49 }} onClick={() => setShowVDrop(false)} />
+                    <div style={{ position: "absolute", top: "100%", left: 0, marginTop: 4, background: COLORS.card, border: `1px solid ${COLORS.border}`, borderRadius: 10, zIndex: 50, minWidth: 180, boxShadow: "0 4px 16px rgba(0,0,0,0.4)", overflow: "hidden" }}>
+                      {variantList.map((v: any) => {
+                        const isActive = activeVariant?.id === v.id;
+                        const hasSubs = (v.subvariants?.length ?? 0) > 0;
+                        return (
+                          <div key={v.id}>
+                            <div
+                              onClick={() => { if (!hasSubs) { setSelectedVariants(prev => ({ ...prev, [safeExIdx]: v.id })); setShowVDrop(false); } else { setSelectedVariants(prev => ({ ...prev, [safeExIdx]: v.id })); } }}
+                              style={{ padding: "9px 14px", cursor: "pointer", fontSize: 13, fontWeight: isActive ? 700 : 400, color: isActive ? COLORS.accent : COLORS.text, background: isActive ? COLORS.accent + "18" : "transparent", borderBottom: `1px solid ${COLORS.border}` }}
+                              onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = COLORS.inner; }}
+                              onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = "transparent"; }}
+                            >
+                              {v.name}{v.isDefault && <span style={{ marginLeft: 6, fontSize: 11, color: COLORS.dim, fontWeight: 400 }}>default</span>}
+                            </div>
+                            {hasSubs && activeVariant?.id === v.id && v.subvariants.map((s: any) => (
+                              <div
+                                key={s.id}
+                                onClick={() => { setSelectedVariants(prev => ({ ...prev, [safeExIdx]: v.id, [`${safeExIdx}_sub`]: s.id })); setShowVDrop(false); }}
+                                style={{ padding: "7px 14px 7px 28px", cursor: "pointer", fontSize: 12, color: COLORS.dim, background: "transparent", borderBottom: `1px solid ${COLORS.border}` }}
+                                onMouseEnter={e => (e.currentTarget.style.background = COLORS.inner)}
+                                onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+                              >
+                                ↳ {s.name}
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
+              </div>
+            );
+          })() : (
+            <h2 style={{ fontSize: 20, fontWeight: 700, margin: "4px 0 0", textDecoration: "underline", textDecorationColor: COLORS.accent, textUnderlineOffset: 4 }}>
+              {exercise.name}
+            </h2>
           )}
 
           <div
@@ -1868,7 +1976,7 @@ const [mobileBottomTab, setMobileBottomTab] = useState<"previous" | "alltime">("
                     fontWeight: 600,
                     boxSizing: "border-box" as const,
                   }}
-                  value={currentSet?.weight || ""}
+                  value={isTouched ? currentSet.weight : (previousWorkout?.sets[currentSetIndex]?.weight || "")}
                   placeholder="0"
                   onFocus={() =>
                     markTouched(currentExerciseIndex, currentSetIndex)
@@ -1925,7 +2033,7 @@ const [mobileBottomTab, setMobileBottomTab] = useState<"previous" | "alltime">("
                     fontWeight: 600,
                     boxSizing: "border-box" as const,
                   }}
-                  value={currentSet?.reps || ""}
+                  value={isTouched ? currentSet.reps : (previousWorkout?.sets[currentSetIndex]?.reps || "")}
                   placeholder="0"
                   onFocus={() =>
                     markTouched(currentExerciseIndex, currentSetIndex)

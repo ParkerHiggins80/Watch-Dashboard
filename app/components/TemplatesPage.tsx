@@ -4,6 +4,9 @@ import {
   COLORS, generateId,
   EQUIPMENT_PRESETS, DEFAULT_DATA_FIELDS, OPTIONAL_DATA_FIELDS,
 } from "../constants";
+import {
+  LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
+} from "recharts";
 import type { Variant, DataField, Subvariant } from "../constants";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -193,6 +196,52 @@ export function WorkoutPopup({ initial, groups, onSave, onClose, onMerge, onDele
   const [stdSets, setStdSets]             = useState(initial?.sets ?? 3);
   const [stdRepRange, setStdRepRange]     = useState(initial?.repRange ?? "8-12");
   const [stdDataFields, setStdDataFields] = useState<DataField[]>([...DEFAULT_DATA_FIELDS]);
+  const [showChart, setShowChart]         = useState(false);
+  const [chartData, setChartData]         = useState<any[]>([]);
+  const [chartVariants, setChartVariants] = useState<{ name: string; color: string }[]>([]);
+  const [chartLoading, setChartLoading]   = useState(false);
+
+  const loadChart = async () => {
+    if (!initial?.id) return;
+    setChartLoading(true);
+    try {
+      const { getAuth } = await import("firebase/auth");
+      const { doc, getDoc } = await import("firebase/firestore");
+      const { db } = await import("../firebase");
+      const uid = getAuth().currentUser?.uid;
+      if (!uid) return;
+      const snap = await getDoc(doc(db, "users", uid, "exerciseIndex", initial.id));
+      if (snap.exists()) {
+          const points = snap.data().points || [];
+          const dateMap: Record<string, any> = {};
+          for (const p of points) {
+            const label = new Date(p.date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
+            if (!dateMap[p.date]) dateMap[p.date] = { label };
+            if (p.variantWeights) {
+              for (const [vName, vMax] of Object.entries(p.variantWeights)) {
+                dateMap[p.date][vName] = vMax;
+              }
+            } else {
+              const fallbackName = initial?.variants?.find(v => v.isDefault)?.name ?? initial?.variants?.[0]?.name ?? "Standard";
+              dateMap[p.date][fallbackName] = p.maxWeight;
+            }
+          }
+          setChartData(Object.values(dateMap));
+          const vList = initial?.variants ?? [];
+          if (!vList.length || (vList.length === 1 && vList[0].name === "Standard")) {
+            setChartVariants([{ name: "Standard", color: VARIANT_COLORS[0] }]);
+          } else {
+            setChartVariants(vList.map((v, i) => ({ name: v.name, color: VARIANT_COLORS[i % VARIANT_COLORS.length] })));
+          }
+        } else {
+          setChartData([]);
+          setChartVariants([]);
+        }
+    } catch (e) {
+      setChartData([]);
+    }
+    setChartLoading(false);
+  };
 
   // ── variant helpers ──────────────────────────────────────────────────────
 
@@ -357,6 +406,51 @@ export function WorkoutPopup({ initial, groups, onSave, onClose, onMerge, onDele
 
   return (
     <div style={overlay}>
+      <div style={{ position: "relative", display: "flex", alignItems: "flex-start", gap: 12, maxHeight: "85vh" }}>
+      {/* Chart panel — absolutely positioned to the right of modal */}
+      {showChart && (
+        <div style={{
+          position: "absolute", left: "calc(100% + 12px)", top: 0,
+          background: COLORS.card, borderRadius: 14, padding: 20,
+          border: `1px solid ${COLORS.border}`, width: 340,
+          display: "flex", flexDirection: "column", gap: 10,
+          bottom: 0, overflow: "hidden",
+        }}>
+          <div style={{ fontSize: 14, fontWeight: 700 }}>{initial?.name} — All Time</div>
+          {chartVariants.length > 1 && (
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 6 }}>
+              {chartVariants.map(v => (
+                <div key={v.name} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11 }}>
+                  <div style={{ width: 8, height: 8, borderRadius: "50%", background: v.color }} />
+                  <span style={{ color: COLORS.dim }}>{v.name}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          {chartLoading ? (
+            <div style={{ color: COLORS.dim, fontSize: 13, textAlign: "center", padding: "30px 0" }}>Loading…</div>
+          ) : chartData.length > 0 ? (
+            <div style={{ flex: 1, minHeight: 0 }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={chartData} margin={{ top: 8, right: 16, left: -20, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke={COLORS.border} />
+                <XAxis dataKey="label" tick={{ fill: COLORS.dim, fontSize: 10 }} stroke={COLORS.border} />
+                <YAxis tick={{ fill: COLORS.dim, fontSize: 10 }} stroke={COLORS.border} domain={["dataMin - 10", "dataMax + 10"]} width={51} />
+                <Tooltip
+                  contentStyle={{ background: COLORS.card, border: `1px solid ${COLORS.border}`, borderRadius: 8, fontSize: 12 }}
+                  formatter={(v: any, name: any) => [`${v} lbs`, name]}
+                />
+                {chartVariants.map(v => (
+                  <Line key={v.name} type="monotone" dataKey={v.name} stroke={v.color} strokeWidth={2} dot={{ fill: v.color, r: 3 }} activeDot={{ r: 5 }} connectNulls />
+                ))}
+              </LineChart>
+            </ResponsiveContainer>
+            </div>
+          ) : (
+            <div style={{ color: COLORS.dim, fontSize: 13, textAlign: "center", padding: "30px 0" }}>No history yet for {initial?.name}.</div>
+          )}
+        </div>
+      )}
       <div style={modal} onClick={e => e.stopPropagation()}>
 
         {/* ── Header ── */}
@@ -383,21 +477,33 @@ export function WorkoutPopup({ initial, groups, onSave, onClose, onMerge, onDele
           </div>
         </div>
 
+        {/* ── Show Chart ── */}
+        {initial && (
+          <button
+            onClick={() => { setShowChart(s => !s); if (!showChart) loadChart(); }}
+            style={{ ...ghostBtn({ fontSize: 12, padding: "6px 12px", width: "100%" }), borderColor: showChart ? COLORS.accent : COLORS.border, color: showChart ? COLORS.accent : COLORS.dim }}
+          >
+            {showChart ? "Hide Chart" : "Show Chart"}
+          </button>
+        )}
+
         {/* ── Mode Toggle ── */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 0, borderRadius: 8, overflow: "hidden", border: `1px solid ${COLORS.border}` }}>
-          <button
-            onClick={() => setMode("standard")}
-            style={{ padding: "10px", border: "none", background: mode === "standard" ? COLORS.accent : COLORS.inner, color: mode === "standard" ? "#fff" : COLORS.dim, cursor: "pointer", fontWeight: 600, fontSize: 13 }}
-          >
-            Standard
-          </button>
-          <button
-            onClick={() => setMode("multi")}
-            style={{ padding: "10px", border: "none", borderLeft: `1px solid ${COLORS.border}`, background: mode === "multi" ? COLORS.accent : COLORS.inner, color: mode === "multi" ? "#fff" : COLORS.dim, cursor: "pointer", fontWeight: 600, fontSize: 13 }}
-          >
-            Multi-Variant
-          </button>
-        </div>
+        {!initial && (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 0, borderRadius: 8, overflow: "hidden", border: `1px solid ${COLORS.border}` }}>
+            <button
+              onClick={() => setMode("standard")}
+              style={{ padding: "10px", border: "none", background: mode === "standard" ? COLORS.accent : COLORS.inner, color: mode === "standard" ? "#fff" : COLORS.dim, cursor: "pointer", fontWeight: 600, fontSize: 13 }}
+            >
+              Standard
+            </button>
+            <button
+              onClick={() => setMode("multi")}
+              style={{ padding: "10px", border: "none", borderLeft: `1px solid ${COLORS.border}`, background: mode === "multi" ? COLORS.accent : COLORS.inner, color: mode === "multi" ? "#fff" : COLORS.dim, cursor: "pointer", fontWeight: 600, fontSize: 13 }}
+            >
+              Multi-Variant
+            </button>
+          </div>
+        )}
 
         {/* ── Standard Mode ── */}
         {mode === "standard" && (
@@ -674,21 +780,38 @@ export function WorkoutPopup({ initial, groups, onSave, onClose, onMerge, onDele
         </div>
 
         {/* ── Actions ── */}
-        {/* ── Actions ── */}
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          {initial && onMerge && (
-            <button
-              onClick={() => onMerge(initial)}
-              style={ghostBtn({ fontSize: 12, padding: "7px 12px", marginRight: "auto" })}
-            >
-              Merge With…
-            </button>
-          )}
+          {initial && (() => {
+            const isMulti = initial.variants?.length > 1 ||
+              (initial.variants?.length === 1 && initial.variants[0].name !== "Standard");
+            if (isMulti) {
+              return (
+                <button
+                  onClick={() => { onClose(); (window as any).__startUnmerge?.(initial); }}
+                  style={ghostBtn({ fontSize: 12, padding: "7px 12px", marginRight: "auto" })}
+                >
+                  Unmerge…
+                </button>
+              );
+            }
+            if (onMerge) {
+              return (
+                <button
+                  onClick={() => onMerge(initial)}
+                  style={ghostBtn({ fontSize: 12, padding: "7px 12px", marginRight: "auto" })}
+                >
+                  Merge With…
+                </button>
+              );
+            }
+            return null;
+          })()}
           <button onClick={onClose} style={ghostBtn()}>Cancel</button>
           <button onClick={handleSave} style={accentBtn()}>
             {initial ? "Save Changes" : "Add Workout"}
           </button>
         </div>
+      </div>
       </div>
 
       </div>
@@ -949,30 +1072,197 @@ function RepRangeInput({ value, onChange, small, label }: { value: string; onCha
 }
 // ─── Template exercise row helpers ───────────────────────────────────────────
 
+function UnmergeVariantList({ unmergeSource, unmergeSelected, setUnmergeSelected }: {
+  unmergeSource: { name: string; variants: Variant[] };
+  unmergeSelected: Set<string>;
+  setUnmergeSelected: (fn: (prev: Set<string>) => Set<string>) => void;
+}) {
+  const [expandedVariantIds, setExpandedVariantIds] = useState<Set<string>>(new Set());
+
+  const toggleExpand = (vid: string) => {
+    setExpandedVariantIds(prev => {
+      const next = new Set(prev);
+      next.has(vid) ? next.delete(vid) : next.add(vid);
+      return next;
+    });
+  };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      {unmergeSource.variants.map(v => {
+        const hasSubs = (v.subvariants?.length ?? 0) > 0;
+        const isExpanded = expandedVariantIds.has(v.id);
+        const checkedWhole = unmergeSelected.has(v.id);
+        const anySubChecked = hasSubs && v.subvariants!.some(s => unmergeSelected.has(`${v.id}::${s.id}`));
+
+        return (
+          <div key={v.id} style={{ borderRadius: 8, border: `1px solid ${checkedWhole || anySubChecked ? COLORS.accent : COLORS.border}`, overflow: "hidden" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", background: checkedWhole ? COLORS.accent + "18" : COLORS.inner }}>
+              <input type="checkbox" checked={checkedWhole} onChange={() => {
+                setUnmergeSelected(prev => {
+                  const next = new Set(prev);
+                  if (next.has(v.id)) {
+                    next.delete(v.id);
+                  } else {
+                    v.subvariants?.forEach(s => next.delete(`${v.id}::${s.id}`));
+                    next.add(v.id);
+                  }
+                  return next;
+                });
+              }} style={{ accentColor: COLORS.accent, flexShrink: 0 }} />
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 13, fontWeight: 600 }}>
+                  {v.name}
+                  {v.isDefault && <span style={{ marginLeft: 6, fontSize: 11, color: COLORS.accent }}>default</span>}
+                </div>
+                {!isExpanded && (
+                  <div style={{ fontSize: 11, color: COLORS.dim, marginTop: 2 }}>
+                    {hasSubs
+                      ? `→ Becomes multi-variant "${unmergeSource.name}" with ${v.subvariants!.length} variant${v.subvariants!.length !== 1 ? "s" : ""}`
+                      : `→ Becomes standard exercise "${v.name} ${unmergeSource.name}"`
+                    }
+                  </div>
+                )}
+              </div>
+              {hasSubs && (
+                <button onClick={() => toggleExpand(v.id)}
+                  style={{ background: "none", border: "none", color: COLORS.dim, cursor: "pointer", fontSize: 12, padding: "2px 4px", flexShrink: 0 }}>
+                  {isExpanded ? "▲" : "▽"} sub-variants
+                </button>
+              )}
+            </div>
+            {hasSubs && isExpanded && (
+              <div style={{ background: COLORS.card, borderTop: `1px solid ${COLORS.border}` }}>
+                {v.subvariants!.map(s => {
+                  const subKey = `${v.id}::${s.id}`;
+                  const checkedSub = unmergeSelected.has(subKey);
+                  return (
+                    <label key={s.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px 8px 28px", cursor: "pointer", background: checkedSub ? COLORS.accent + "12" : "transparent", borderBottom: `1px solid ${COLORS.border}` }}>
+                      <input type="checkbox" checked={checkedSub} onChange={() => {
+                        setUnmergeSelected(prev => {
+                          const next = new Set(prev);
+                          next.delete(v.id);
+                          next.has(subKey) ? next.delete(subKey) : next.add(subKey);
+                          return next;
+                        });
+                      }} style={{ accentColor: COLORS.accent, flexShrink: 0 }} />
+                      <div>
+                        <div style={{ fontSize: 12, fontWeight: 500 }}>
+                          {s.name}
+                          {s.isDefault && <span style={{ marginLeft: 6, fontSize: 10, color: COLORS.accent }}>default</span>}
+                        </div>
+                        <div style={{ fontSize: 11, color: COLORS.dim, marginTop: 1 }}>
+                          → Becomes standard exercise "{s.name} {unmergeSource.name}"
+                        </div>
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function TemplateExRow({ ex, tid, i, total, onMove, onUpdate, onRemove }: {
   ex: Exercise; tid: string; i: number; total: number;
   onMove: (dir: number) => void;
   onUpdate: <K extends keyof Exercise>(key: K, val: Exercise[K]) => void;
   onRemove: () => void;
 }) {
+  const [showVariantPicker, setShowVariantPicker] = useState(false);
+  const [pendingVariantId, setPendingVariantId]   = useState<string | null>(null);
+  const [pendingSubId, setPendingSubId]           = useState<string | null>(null);
+
+  const isMulti = ex.variants?.length > 1 || (ex.variants?.length === 1 && ex.variants[0].name !== "Standard");
+  const selectedVariant = ex.variants?.find(v => v.id === (ex as any).selectedVariantId) ?? ex.variants?.find(v => v.isDefault) ?? ex.variants?.[0];
+  const selectedSub = selectedVariant?.subvariants?.find(s => s.id === (ex as any).selectedSubId);
+
+  const displayName = (() => {
+    if (!isMulti) return ex.name;
+    if (selectedSub) return `${selectedSub.name} ${ex.name}`;
+    if (selectedVariant && selectedVariant.name !== "Standard") return `${selectedVariant.name} ${ex.name}`;
+    return ex.name;
+  })();
+
+  const applyVariant = () => {
+    if (!pendingVariantId) return;
+    onUpdate("selectedVariantId" as any, pendingVariantId as any);
+    onUpdate("selectedSubId" as any, (pendingSubId ?? null) as any);
+    setShowVariantPicker(false);
+    setPendingVariantId(null);
+    setPendingSubId(null);
+  };
+
   return (
-    <div style={{
-      display: "grid", gridTemplateColumns: "20px 1fr 88px 130px 20px",
-      gap: 8, padding: "9px 10px", background: COLORS.inner,
-      borderRadius: 8, marginBottom: 5, alignItems: "center",
-    }}>
-      <div style={{ display: "flex", flexDirection: "column", gap: 2, alignItems: "center" }}>
-        <button onClick={() => onMove(-1)} disabled={i === 0} style={{ background: "none", border: "none", color: i === 0 ? COLORS.border : COLORS.dim, cursor: i === 0 ? "default" : "pointer", fontSize: 9, padding: 1 }}>▲</button>
-        <button onClick={() => onMove(1)}  disabled={i === total - 1} style={{ background: "none", border: "none", color: i === total - 1 ? COLORS.border : COLORS.dim, cursor: i === total - 1 ? "default" : "pointer", fontSize: 9, padding: 1 }}>▼</button>
+    <div style={{ position: "relative", marginBottom: 5 }}>
+      <div style={{
+        display: "grid", gridTemplateColumns: "20px 1fr 88px 130px 20px",
+        gap: 8, padding: "9px 10px", background: COLORS.inner,
+        borderRadius: 8, alignItems: "center",
+      }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 2, alignItems: "center" }}>
+          <button onClick={() => onMove(-1)} disabled={i === 0} style={{ background: "none", border: "none", color: i === 0 ? COLORS.border : COLORS.dim, cursor: i === 0 ? "default" : "pointer", fontSize: 9, padding: 1 }}>▲</button>
+          <button onClick={() => onMove(1)} disabled={i === total - 1} style={{ background: "none", border: "none", color: i === total - 1 ? COLORS.border : COLORS.dim, cursor: i === total - 1 ? "default" : "pointer", fontSize: 9, padding: 1 }}>▼</button>
+        </div>
+        {isMulti ? (
+          <button
+            onClick={() => { setShowVariantPicker(v => !v); setPendingVariantId(selectedVariant?.id ?? null); setPendingSubId((ex as any).selectedSubId ?? null); }}
+            style={{ fontSize: 13, fontWeight: 500, background: "none", border: "none", color: COLORS.accent, cursor: "pointer", padding: 0, textAlign: "left" as const, textDecoration: "underline", textUnderlineOffset: 3 }}
+          >
+            {displayName} ▾
+          </button>
+        ) : (
+          <span style={{ fontSize: 13, fontWeight: 500 }}>{displayName}</span>
+        )}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}>
+          <button onClick={() => onUpdate("sets", Math.max(1, ex.sets - 1))} style={{ background: COLORS.border, border: "none", color: COLORS.text, borderRadius: 4, width: 20, height: 20, cursor: "pointer", fontSize: 13, lineHeight: 1 }}>−</button>
+          <span style={{ fontSize: 12, minWidth: 16, textAlign: "center" }}>{ex.sets}</span>
+          <button onClick={() => onUpdate("sets", ex.sets + 1)} style={{ background: COLORS.border, border: "none", color: COLORS.text, borderRadius: 4, width: 20, height: 20, cursor: "pointer", fontSize: 13, lineHeight: 1 }}>+</button>
+        </div>
+        <RepRangeInput value={ex.repRange} onChange={val => onUpdate("repRange", val)} small />
+        <button onClick={onRemove} style={{ background: "none", border: "none", color: COLORS.red, cursor: "pointer", fontSize: 14, padding: 0, textAlign: "center" }}>✕</button>
       </div>
-      <span style={{ fontSize: 13, fontWeight: 500 }}>{ex.name}</span>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}>
-        <button onClick={() => onUpdate("sets", Math.max(1, ex.sets - 1))} style={{ background: COLORS.border, border: "none", color: COLORS.text, borderRadius: 4, width: 20, height: 20, cursor: "pointer", fontSize: 13, lineHeight: 1 }}>−</button>
-        <span style={{ fontSize: 12, minWidth: 16, textAlign: "center" }}>{ex.sets}</span>
-        <button onClick={() => onUpdate("sets", ex.sets + 1)} style={{ background: COLORS.border, border: "none", color: COLORS.text, borderRadius: 4, width: 20, height: 20, cursor: "pointer", fontSize: 13, lineHeight: 1 }}>+</button>
-      </div>
-      <RepRangeInput value={ex.repRange} onChange={val => onUpdate("repRange", val)} small />
-      <button onClick={onRemove} style={{ background: "none", border: "none", color: COLORS.red, cursor: "pointer", fontSize: 14, padding: 0, textAlign: "center" }}>✕</button>
+
+      {/* Variant picker dropdown */}
+      {showVariantPicker && (
+        <div style={{ position: "absolute", top: "100%", left: 28, zIndex: 20, background: COLORS.card, border: `1px solid ${COLORS.border}`, borderRadius: 10, padding: 12, width: 260, display: "flex", flexDirection: "column", gap: 8, marginTop: 4, boxShadow: "0 4px 16px rgba(0,0,0,0.4)" }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: COLORS.dim, textTransform: "uppercase" as const, letterSpacing: 0.5 }}>Select Variant</div>
+          {ex.variants?.map(v => {
+            const hasSubs = (v.subvariants?.length ?? 0) > 0;
+            const isSelV = pendingVariantId === v.id;
+            return (
+              <div key={v.id}>
+                <div
+                  onClick={() => { setPendingVariantId(v.id); setPendingSubId(null); }}
+                  style={{ padding: "7px 10px", borderRadius: 7, background: isSelV && !pendingSubId ? COLORS.accent + "22" : COLORS.inner, border: `1px solid ${isSelV && !pendingSubId ? COLORS.accent : COLORS.border}`, cursor: "pointer", fontSize: 13, fontWeight: 600 }}
+                >
+                  {v.name}{v.isDefault && <span style={{ marginLeft: 6, fontSize: 11, color: COLORS.accent, fontWeight: 400 }}>default</span>}
+                </div>
+                {hasSubs && isSelV && (
+                  <div style={{ marginLeft: 12, marginTop: 4, display: "flex", flexDirection: "column", gap: 3 }}>
+                    {v.subvariants!.map(s => (
+                      <div key={s.id}
+                        onClick={() => { setPendingVariantId(v.id); setPendingSubId(s.id); }}
+                        style={{ padding: "5px 10px", borderRadius: 6, background: pendingSubId === s.id ? COLORS.accent + "22" : COLORS.inner, border: `1px solid ${pendingSubId === s.id ? COLORS.accent : COLORS.border}`, cursor: "pointer", fontSize: 12 }}
+                      >
+                        {s.name}{s.isDefault && <span style={{ marginLeft: 6, fontSize: 10, color: COLORS.accent }}>default</span>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+          <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
+            <button onClick={() => setShowVariantPicker(false)} style={ghostBtn({ fontSize: 11, padding: "4px 10px", flex: 1 })}>Cancel</button>
+            <button onClick={applyVariant} style={accentBtn({ fontSize: 11, padding: "4px 10px", flex: 1 })}>Apply</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1047,6 +1337,7 @@ export default function TemplatesPage({
   const [pendingGroupId, setPendingGroupId]     = useState<string | null>(null);
   const [groupNameError, setGroupNameError]     = useState<string | null>(null);
   const [deletingExercise, setDeletingExercise] = useState<Exercise | null>(null);
+const [pendingDeleteGroupId, setPendingDeleteGroupId] = useState<string | null>(null);
   const [prefillExercise, setPrefillExercise] = useState<Exercise | null>(null);
   const [deletingTemplateId, setDeletingTemplateId] = useState<string | null>(null);
   const [templatesCollapsed, setTemplatesCollapsed] = useState(false);
@@ -1076,6 +1367,11 @@ export default function TemplatesPage({
   const [mergeTargetSubId, setMergeTargetSubId]             = useState<string | null>("none");
   const [showMergeConfirm, setShowMergeConfirm]             = useState(false);
 
+  // ── Unmerge state ───────────────────────────────────────────────────────────
+  const [unmergeSource, setUnmergeSource]         = useState<Exercise | null>(null);
+  const [unmergeSelected, setUnmergeSelected]     = useState<Set<string>>(new Set()); // variant ids
+  const [showUnmergeConfirm, setShowUnmergeConfirm] = useState(false);
+
   const cancelMerge = () => {
     setMergeSource(null);
     setMergeTarget(null);
@@ -1090,6 +1386,100 @@ export default function TemplatesPage({
     setShowWorkoutPopup(false);
   };
 
+  const startUnmerge = (source: Exercise) => {
+    setUnmergeSource(source);
+    setUnmergeSelected(new Set());
+    setShowUnmergeConfirm(false);
+  };
+
+  // Expose startUnmerge via window so WorkoutPopup can call it without prop drilling
+  if (typeof window !== "undefined") {
+    (window as any).__startUnmerge = startUnmerge;
+  }
+
+  const executeUnmerge = () => {
+    if (!unmergeSource) return;
+
+    const newExercises: Exercise[] = [];
+    const variantIdsToRemove = new Set<string>();
+
+    for (const v of unmergeSource.variants) {
+      const wholeSelected = unmergeSelected.has(v.id);
+      const selectedSubKeys = (v.subvariants ?? [])
+        .filter(s => unmergeSelected.has(`${v.id}::${s.id}`));
+
+      if (wholeSelected) {
+        variantIdsToRemove.add(v.id);
+        const hasSubs = (v.subvariants?.length ?? 0) > 0;
+        if (hasSubs) {
+          newExercises.push({
+            id: generateId(),
+            name: unmergeSource.name,
+            sets: v.sets,
+            repRange: v.repRange,
+            groupIds: [...unmergeSource.groupIds],
+            variants: (v.subvariants ?? []).map((s, i) => ({
+              id: generateId(), name: s.name,
+              isDefault: s.isDefault ?? i === 0, order: i,
+              sets: s.sets ?? v.sets, repRange: s.repRange ?? v.repRange,
+              dataFields: s.dataFields ?? v.dataFields ?? [...DEFAULT_DATA_FIELDS],
+            })),
+          });
+        } else {
+          newExercises.push({
+            id: generateId(),
+            name: `${v.name} ${unmergeSource.name}`,
+            sets: v.sets, repRange: v.repRange,
+            groupIds: [...unmergeSource.groupIds],
+            variants: [{ id: generateId(), name: "Standard", isDefault: true, order: 0, sets: v.sets, repRange: v.repRange, dataFields: v.dataFields ?? [...DEFAULT_DATA_FIELDS] }],
+          });
+        }
+      } else if (selectedSubKeys.length > 0) {
+        const remainingSubs = (v.subvariants ?? []).filter(s => !unmergeSelected.has(`${v.id}::${s.id}`));
+        if (remainingSubs.length === 0) {
+          variantIdsToRemove.add(v.id);
+        } else {
+          variantIdsToRemove.add(`__patch__${v.id}`);
+        }
+        for (const s of selectedSubKeys) {
+          newExercises.push({
+            id: generateId(),
+            name: `${s.name} ${unmergeSource.name}`,
+            sets: s.sets ?? v.sets, repRange: s.repRange ?? v.repRange,
+            groupIds: [...unmergeSource.groupIds],
+            variants: [{ id: generateId(), name: "Standard", isDefault: true, order: 0, sets: s.sets ?? v.sets, repRange: s.repRange ?? v.repRange, dataFields: s.dataFields ?? v.dataFields ?? [...DEFAULT_DATA_FIELDS] }],
+          });
+        }
+      }
+    }
+
+    const keptVariants = unmergeSource.variants
+      .filter(v => !variantIdsToRemove.has(v.id))
+      .map(v => variantIdsToRemove.has(`__patch__${v.id}`)
+        ? { ...v, subvariants: (v.subvariants ?? []).filter(s => !unmergeSelected.has(`${v.id}::${s.id}`)) }
+        : v
+      );
+    const patchedVariants = unmergeSource.variants
+      .filter(v => variantIdsToRemove.has(`__patch__${v.id}`))
+      .map(v => ({ ...v, subvariants: (v.subvariants ?? []).filter(s => !unmergeSelected.has(`${v.id}::${s.id}`)) }));
+    const remainingVariants = [...keptVariants, ...patchedVariants]
+      .map((v, i) => ({ ...v, isDefault: i === 0, order: i }));
+
+    let updatedExercises: Exercise[];
+    if (remainingVariants.length === 0) {
+      updatedExercises = exercises.filter(e => e.id !== unmergeSource.id).concat(newExercises);
+      setTemplates(templates.map(t => ({ ...t, exercises: t.exercises.filter(e => e.id !== unmergeSource.id) })));
+    } else {
+      const updatedSource: Exercise = { ...unmergeSource, variants: remainingVariants };
+      updatedExercises = exercises.map(e => e.id === unmergeSource.id ? updatedSource : e).concat(newExercises);
+    }
+
+    wrappedSetExercises(updatedExercises);
+    setUnmergeSource(null);
+    setUnmergeSelected(new Set());
+    setShowUnmergeConfirm(false);
+  };
+
   const selectMergeTarget = (target: Exercise) => {
     const defaultV = target.variants.find(v => v.isDefault) ?? target.variants[0];
     setMergeTarget(target);
@@ -1102,43 +1492,128 @@ export default function TemplatesPage({
     setShowMergeConfirm(true);
   };
 
-  const executeMerge = () => {
+  const executeMerge = async () => {
     if (!mergeSource || !mergeTarget || !mergeTargetVariantId) return;
 
-    // Build the new subvariant from the source exercise
-    const newSub: Subvariant = {
-      id: generateId(),
-      name: mergeSource.name,
-      isDefault: false,
-      order: 99,
-      sets: mergeSource.sets,
-      repRange: mergeSource.repRange,
-      dataFields: mergeSource.variants?.[0]?.dataFields ?? [...DEFAULT_DATA_FIELDS],
-    };
+    const targetVariantName = mergeTarget.variants.find(v => v.id === mergeTargetVariantId)?.name ?? "";
 
-    // Add the subvariant to the selected variant of the target
-    const updatedTarget: Exercise = {
-      ...mergeTarget,
-      variants: mergeTarget.variants.map(v => {
-        if (v.id !== mergeTargetVariantId) return v;
-        const existingSubs = v.subvariants ?? [];
-        // If mergeTargetSubId is "none", add as new subvariant
-        return { ...v, subvariants: [...existingSubs, newSub] };
-      }),
-    };
+    // ── 1. Merge Firestore exerciseIndex history ──────────────────────────────
+    try {
+      const { getAuth } = await import("firebase/auth");
+      const { doc: fsDoc, getDoc: fsGetDoc, setDoc: fsSetDoc } = await import("firebase/firestore");
+      const { db: fsDb } = await import("../firebase");
+      const uid = getAuth().currentUser?.uid;
 
-    // Remove source from exercises, update target
-    const updatedExercises = exercises
-      .filter(e => e.id !== mergeSource.id)
-      .map(e => e.id === mergeTarget.id ? updatedTarget : e);
+      if (uid && mergeSource.id && mergeTarget.id) {
+        const sourceRef = fsDoc(fsDb, "users", uid, "exerciseIndex", mergeSource.id);
+        const targetRef = fsDoc(fsDb, "users", uid, "exerciseIndex", mergeTarget.id);
+
+        const [sourceSnap, targetSnap] = await Promise.all([fsGetDoc(sourceRef), fsGetDoc(targetRef)]);
+
+        const sourcePoints: any[] = sourceSnap.exists() ? (sourceSnap.data().points ?? []) : [];
+        const targetPoints: any[] = targetSnap.exists() ? (targetSnap.data().points ?? []) : [];
+
+        // Build a map of target points by date for fast lookup
+        const targetByDate = new Map<string, any>();
+        for (const p of targetPoints) targetByDate.set(p.date, p);
+
+        for (const sp of sourcePoints) {
+          const existing = targetByDate.get(sp.date);
+          if (existing) {
+            // Same date — combine sets, keep higher maxWeight
+            const combinedSets = [...(existing.sets ?? []), ...(sp.sets ?? [])];
+            const newMax = Math.max(existing.maxWeight ?? 0, sp.maxWeight ?? 0);
+            // Merge variantWeights: add source sets under the target variant name
+            const mergedVariantWeights = { ...(existing.variantWeights ?? {}) };
+            const sourceVariantMax = sp.variantWeights
+              ? Math.max(...Object.values(sp.variantWeights as Record<string, number>))
+              : sp.maxWeight ?? 0;
+            if (sourceVariantMax > 0) {
+              mergedVariantWeights[targetVariantName] = Math.max(
+                mergedVariantWeights[targetVariantName] ?? 0,
+                sourceVariantMax
+              );
+            }
+            targetByDate.set(sp.date, {
+              ...existing,
+              maxWeight: newMax,
+              sets: combinedSets,
+              variantWeights: mergedVariantWeights,
+            });
+          } else {
+            // No conflict — reattribute to target variant
+            const reattributed: any = {
+              ...sp,
+              variant: targetVariantName,
+              variantWeights: { [targetVariantName]: sp.maxWeight ?? 0 },
+            };
+            targetByDate.set(sp.date, reattributed);
+          }
+        }
+
+        const mergedPoints = Array.from(targetByDate.values())
+          .sort((a, b) => a.date.localeCompare(b.date));
+
+        // Write merged target index, delete source index
+        await fsSetDoc(targetRef, {
+          exerciseId: mergeTarget.id,
+          exerciseName: mergeTarget.name,
+          points: mergedPoints,
+        });
+        // Delete source index doc
+        const { deleteDoc } = await import("firebase/firestore");
+        await deleteDoc(sourceRef);
+      }
+    } catch (err) {
+      console.error("Merge history error:", err);
+    }
+
+    // ── 2. Re-tag workout history documents in Firestore ─────────────────────
+    try {
+      const { getAuth: getAuth2 } = await import("firebase/auth");
+      const { collection, getDocs, writeBatch: wb2, doc: fsDoc2 } = await import("firebase/firestore");
+      const { db: fsDb2 } = await import("../firebase");
+      const uid2 = getAuth2().currentUser?.uid;
+      if (uid2) {
+        const workoutsSnap = await getDocs(collection(fsDb2, "users", uid2, "workouts"));
+        const batch2 = wb2(fsDb2);
+        let batchCount = 0;
+        for (const wDoc of workoutsSnap.docs) {
+          const w = wDoc.data();
+          const hasSource = (w.exercises || []).some(
+            (ex: any) => ex.name === mergeSource.name || ex.exerciseId === mergeSource.id
+          );
+          if (!hasSource) continue;
+          const updatedExs = (w.exercises || []).map((ex: any) => {
+            if (ex.name !== mergeSource.name && ex.exerciseId !== mergeSource.id) return ex;
+            return {
+              ...ex,
+              name: mergeTarget.name,
+              exerciseId: mergeTarget.id,
+              sets: (ex.sets || []).map((s: any) => ({
+                ...s,
+                variantName: targetVariantName,
+              })),
+            };
+          });
+          batch2.set(fsDoc2(fsDb2, "users", uid2, "workouts", wDoc.id), { ...w, exercises: updatedExs });
+          batchCount++;
+          if (batchCount >= 400) break; // Firestore batch limit safety
+        }
+        if (batchCount > 0) await batch2.commit();
+      }
+    } catch (err) {
+      console.error("Merge workout history re-tag error:", err);
+    }
+
+    // ── 3. Update exercise library — remove source only, target unchanged ────
+    const updatedExercises = exercises.filter(e => e.id !== mergeSource.id);
     wrappedSetExercises(updatedExercises);
 
-    // Update all templates — replace source references with target
+    // ── 4. Update templates — remove source references only ──────────────────
     setTemplates(templates.map(t => ({
       ...t,
-      exercises: t.exercises
-        .filter(e => e.id !== mergeSource.id && e.name !== mergeSource.name)
-        .map(e => e.id === mergeTarget.id ? updatedTarget : e),
+      exercises: t.exercises.filter(e => e.id !== mergeSource.id && e.name !== mergeSource.name),
     })));
 
     cancelMerge();
@@ -1202,8 +1677,14 @@ export default function TemplatesPage({
     setPrefillExercise(null);
   };
 
-  const [localGroups, setLocalGroups] = useState<WorkoutGroup[]>(workoutGroups.length > 0 ? workoutGroups : DEFAULT_GROUPS);
-  const updateGroups = (g: WorkoutGroup[]) => { setLocalGroups(g); setWorkoutGroups?.(g); };
+  const [localGroups, setLocalGroups] = useState<WorkoutGroup[]>(
+  (workoutGroups.length > 0 ? workoutGroups : DEFAULT_GROUPS).filter(g => g.name.trim() !== "")
+);
+  const updateGroups = (g: WorkoutGroup[]) => {
+  const cleaned = g.filter(x => x.id === pendingGroupId || x.name.trim() !== "");
+  setLocalGroups(cleaned);
+  setWorkoutGroups?.(cleaned);
+};
 
   const addGroup = () => {
     const id = generateId();
@@ -1226,6 +1707,12 @@ export default function TemplatesPage({
     updateGroups(localGroups.filter(g => g.id !== id));
     setGroupNameError(null);
     setPendingGroupId(null);
+  };
+
+  const confirmDeleteGroup = (id: string) => {
+    wrappedSetExercises(exercises.map(ex => ({ ...ex, groupIds: ex.groupIds.filter(gid => gid !== id) })));
+    updateGroups(localGroups.filter(g => g.id !== id));
+    setPendingDeleteGroupId(null);
   };
 
   // ── Layout ──────────────────────────────────────────────────────────────────
@@ -1271,31 +1758,10 @@ export default function TemplatesPage({
               </div>
             </div>
 
-            {/* Subvariant picker — only if selected variant has subvariants */}
-            {(() => {
-              const selV = mergeTarget.variants.find(v => v.id === mergeTargetVariantId);
-              if (!selV?.subvariants?.length) return null;
-              return (
-                <div>
-                  <div style={{ fontSize: 12, color: COLORS.dim, fontWeight: 700, textTransform: "uppercase" as const, marginBottom: 8 }}>Select Sub-Variant <span style={{ fontSize: 11, fontWeight: 400 }}>(optional)</span></div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                    {selV.subvariants.map(s => (
-                      <label key={s.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 10px", borderRadius: 8, background: mergeTargetSubId === s.id ? COLORS.accent + "22" : COLORS.inner, border: `1px solid ${mergeTargetSubId === s.id ? COLORS.accent : COLORS.border}`, cursor: "pointer" }}>
-                        <input type="radio" checked={mergeTargetSubId === s.id} onChange={() => setMergeTargetSubId(s.id)} style={{ accentColor: COLORS.accent }} />
-                        <span style={{ fontSize: 13 }}>{s.name || <span style={{ color: COLORS.dim, fontStyle: "italic" }}>Unnamed</span>}{s.isDefault && <span style={{ marginLeft: 6, fontSize: 11, color: COLORS.accent }}>default</span>}</span>
-                      </label>
-                    ))}
-                    <label style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 10px", borderRadius: 8, background: mergeTargetSubId === "none" ? COLORS.accent + "22" : COLORS.inner, border: `1px solid ${mergeTargetSubId === "none" ? COLORS.accent : COLORS.border}`, cursor: "pointer" }}>
-                      <input type="radio" checked={mergeTargetSubId === "none"} onChange={() => setMergeTargetSubId("none")} style={{ accentColor: COLORS.accent }} />
-                      <span style={{ fontSize: 13, color: COLORS.dim }}>No sub-variant</span>
-                    </label>
-                  </div>
-                </div>
-              );
-            })()}
+            
 
             <div style={{ fontSize: 12, color: COLORS.dim, padding: "8px 10px", background: COLORS.inner, borderRadius: 8 }}>
-              "{mergeSource?.name}" will be added as a new sub-variant under <strong style={{ color: COLORS.text }}>{mergeTarget.name} → {mergeTarget.variants.find(v => v.id === mergeTargetVariantId)?.name}</strong>
+              All logged history for <strong style={{ color: COLORS.text }}>"{mergeSource?.name}"</strong> will be merged into <strong style={{ color: COLORS.text }}>{mergeTarget.name} → {mergeTarget.variants.find(v => v.id === mergeTargetVariantId)?.name}</strong>. Sets logged on the same date will be combined.
             </div>
 
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
@@ -1311,16 +1777,75 @@ export default function TemplatesPage({
           <div style={{ background: COLORS.card, borderRadius: 14, padding: 24, width: 420, border: `1px solid ${COLORS.border}`, display: "flex", flexDirection: "column", gap: 16 }}>
             <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: COLORS.orange }}>⚠ Are you sure?</h3>
             <p style={{ margin: 0, fontSize: 13, color: COLORS.dim, lineHeight: 1.6 }}>
-              <strong style={{ color: COLORS.text }}>"{mergeSource?.name}"</strong> will be permanently deleted as a standalone exercise. All logged history will be moved to:
+              <strong style={{ color: COLORS.text }}>"{mergeSource?.name}"</strong> will be permanently deleted as a standalone exercise. All logged history will be merged into:
             </p>
             <div style={{ padding: "10px 14px", background: COLORS.inner, borderRadius: 8, fontSize: 13, fontWeight: 600 }}>
               {mergeTarget?.name} → {mergeTarget?.variants.find(v => v.id === mergeTargetVariantId)?.name}
-              {mergeTargetSubId !== "none" && ` → ${mergeTarget?.variants.find(v => v.id === mergeTargetVariantId)?.subvariants?.find(s => s.id === mergeTargetSubId)?.name}`}
             </div>
             <p style={{ margin: 0, fontSize: 12, color: COLORS.red }}>This cannot be undone.</p>
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
               <button onClick={() => setShowMergeConfirm(false)} style={ghostBtn()}>Go Back</button>
               <button onClick={executeMerge} style={{ ...accentBtn(), background: COLORS.red }}>Delete & Merge</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Unmerge Modal */}
+      {unmergeSource && !showUnmergeConfirm && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}>
+          <div style={{ background: COLORS.card, borderRadius: 14, padding: 24, width: 460, border: `1px solid ${COLORS.border}`, display: "flex", flexDirection: "column", gap: 16 }}>
+            <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>Unmerge "{unmergeSource.name}"</h3>
+            <p style={{ margin: 0, fontSize: 13, color: COLORS.dim }}>Select variants to split off into their own exercises.</p>
+            <UnmergeVariantList
+              unmergeSource={unmergeSource}
+              unmergeSelected={unmergeSelected}
+              setUnmergeSelected={setUnmergeSelected}
+            />
+            {unmergeSelected.size === unmergeSource.variants.length && (
+              <div style={{ fontSize: 12, color: COLORS.orange, padding: "8px 10px", background: COLORS.orange + "18", borderRadius: 8, border: `1px solid ${COLORS.orange}` }}>
+                ⚠ All variants selected — "{unmergeSource.name}" will be deleted after unmerging.
+              </div>
+            )}
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button onClick={() => setUnmergeSource(null)} style={ghostBtn()}>Cancel</button>
+              <button
+                disabled={unmergeSelected.size === 0}
+                onClick={() => setShowUnmergeConfirm(true)}
+                style={accentBtn({ opacity: unmergeSelected.size === 0 ? 0.4 : 1, cursor: unmergeSelected.size === 0 ? "default" : "pointer" })}
+              >
+                Continue
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Unmerge Confirm */}
+      {unmergeSource && showUnmergeConfirm && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1001 }}>
+          <div style={{ background: COLORS.card, borderRadius: 14, padding: 24, width: 420, border: `1px solid ${COLORS.border}`, display: "flex", flexDirection: "column", gap: 16 }}>
+            <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: COLORS.orange }}>⚠ Confirm Unmerge</h3>
+            <p style={{ margin: 0, fontSize: 13, color: COLORS.dim, lineHeight: 1.6 }}>The following variants will be split off:</p>
+            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              {unmergeSource.variants.filter(v => unmergeSelected.has(v.id)).map(v => {
+                const hasSubs = (v.subvariants?.length ?? 0) > 0;
+                return (
+                  <div key={v.id} style={{ padding: "8px 12px", background: COLORS.inner, borderRadius: 8, fontSize: 13 }}>
+                    <strong>{v.name}</strong>
+                    <span style={{ color: COLORS.dim, fontSize: 12, marginLeft: 8 }}>
+                      {hasSubs ? `→ multi-variant "${unmergeSource.name}"` : `→ standard "${v.name} ${unmergeSource.name}"`}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+            {unmergeSelected.size === unmergeSource.variants.length && (
+              <p style={{ margin: 0, fontSize: 12, color: COLORS.red }}>"{unmergeSource.name}" will be permanently deleted. This cannot be undone.</p>
+            )}
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button onClick={() => setShowUnmergeConfirm(false)} style={ghostBtn()}>Go Back</button>
+              <button onClick={executeUnmerge} style={{ ...accentBtn(), background: COLORS.red }}>Confirm Unmerge</button>
             </div>
           </div>
         </div>
@@ -1535,19 +2060,33 @@ export default function TemplatesPage({
                       {/* Exercise picker */}
                       {showExPicker ? (
                         <div style={{ background: COLORS.card, borderRadius: 8, padding: 12, marginTop: 8, border: `1px solid ${COLORS.border}` }}>
-                          <p style={{ margin: "0 0 8px", fontSize: 12, color: COLORS.dim }}>Select an exercise to add:</p>
-                          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                            {exercises.map(ex => (
-                              <button key={ex.id} onClick={() => addExToTemplate(template.id, ex)} style={{
-                                padding: "5px 10px", borderRadius: 6, border: `1px solid ${COLORS.border}`,
-                                background: COLORS.inner, color: COLORS.text, cursor: "pointer", fontSize: 12,
-                              }}>
-                                {ex.name}
-                              </button>
-                            ))}
-                          </div>
+                          <p style={{ margin: "0 0 10px", fontSize: 12, color: COLORS.dim }}>Select an exercise to add:</p>
                           {exercises.length === 0 && <p style={{ fontSize: 12, color: COLORS.dim, margin: 0 }}>No exercises yet — add some in the Workouts panel.</p>}
-                          <button onClick={() => setShowExPicker(false)} style={ghostBtn({ marginTop: 10, fontSize: 12 })}>Cancel</button>
+                          {[...localGroups, { id: "__ungrouped__", name: "Ungrouped" }].map(g => {
+                            const groupExs = g.id === "__ungrouped__"
+                              ? exercises.filter(ex => ex.groupIds.length === 0)
+                              : exercises.filter(ex => ex.groupIds.includes(g.id));
+                            if (groupExs.length === 0) return null;
+                            return (
+                              <div key={g.id} style={{ marginBottom: 10 }}>
+                                <div style={{ fontSize: 10, fontWeight: 700, color: COLORS.dim, textTransform: "uppercase" as const, letterSpacing: 0.5, marginBottom: 5 }}>{g.name}</div>
+                                <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+                                  {groupExs.map(ex => {
+                                    const isMulti = ex.variants?.length > 1 || (ex.variants?.length === 1 && ex.variants[0].name !== "Standard");
+                                    return (
+                                      <button key={ex.id} onClick={() => addExToTemplate(template.id, ex)} style={{
+                                        padding: "4px 10px", borderRadius: 6, border: `1px solid ${isMulti ? COLORS.accent : COLORS.border}`,
+                                        background: COLORS.inner, color: isMulti ? COLORS.accent : COLORS.text, cursor: "pointer", fontSize: 12,
+                                      }}>
+                                        {ex.name}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            );
+                          })}
+                          <button onClick={() => setShowExPicker(false)} style={ghostBtn({ marginTop: 6, fontSize: 12 })}>Cancel</button>
                         </div>
                       ) : (
                         <button onClick={() => setShowExPicker(true)} style={{ ...ghostBtn(), width: "100%", marginTop: 8, borderStyle: "dashed" }}>
@@ -1615,12 +2154,22 @@ export default function TemplatesPage({
                           onMouseEnter={e => (e.currentTarget.querySelector(".cancel-tip") as HTMLElement).style.opacity = "1"}
                           onMouseLeave={e => (e.currentTarget.querySelector(".cancel-tip") as HTMLElement).style.opacity = "0"}
                         >
-                          <button
-                            onClick={() => cancelGroupName(g.id)}
-                            style={{ background: "none", border: "none", color: COLORS.dim, cursor: "pointer", fontSize: 16, padding: "0 2px", lineHeight: 1 }}
-                            onMouseEnter={e => (e.currentTarget as HTMLButtonElement).style.color = COLORS.red}
-                            onMouseLeave={e => (e.currentTarget as HTMLButtonElement).style.color = COLORS.dim}
-                          >×</button>
+                          {pendingDeleteGroupId === g.id ? (
+                            <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 4 }}>
+                              <span style={{ fontSize: 11, color: COLORS.dim }}>Delete group?</span>
+                              <div style={{ display: "flex", gap: 4 }}>
+                                <button onClick={() => confirmDeleteGroup(g.id)} style={{ padding: "2px 8px", borderRadius: 6, border: `1px solid ${COLORS.red}`, background: "transparent", color: COLORS.red, cursor: "pointer", fontSize: 11, fontWeight: 600 }}>Delete</button>
+                                <button onClick={() => setPendingDeleteGroupId(null)} style={{ padding: "2px 8px", borderRadius: 6, border: `1px solid ${COLORS.border}`, background: "transparent", color: COLORS.dim, cursor: "pointer", fontSize: 11 }}>Cancel</button>
+                              </div>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => setPendingDeleteGroupId(g.id)}
+                              style={{ background: "none", border: "none", color: COLORS.dim, cursor: "pointer", fontSize: 16, padding: "0 2px", lineHeight: 1 }}
+                              onMouseEnter={e => (e.currentTarget as HTMLButtonElement).style.color = COLORS.red}
+                              onMouseLeave={e => (e.currentTarget as HTMLButtonElement).style.color = COLORS.dim}
+                            >×</button>
+                          )}
                           <div className="cancel-tip" style={{
                             position: "absolute", bottom: "100%", left: "50%", transform: "translateX(-50%)",
                             marginBottom: 4, background: COLORS.inner, border: `1px solid ${COLORS.border}`,
@@ -1642,15 +2191,31 @@ export default function TemplatesPage({
                         <div style={{ fontSize: 11, color: COLORS.red, marginTop: 4, paddingLeft: 22 }}>{groupNameError}</div>
                       )}
                     </div>
+                    ) : pendingDeleteGroupId === g.id ? (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                        <span style={{ fontSize: 11, color: COLORS.dim }}>Delete group?</span>
+                        <div style={{ display: "flex", gap: 4 }}>
+                          <button onClick={() => confirmDeleteGroup(g.id)} style={{ padding: "2px 8px", borderRadius: 6, border: `1px solid ${COLORS.red}`, background: "transparent", color: COLORS.red, cursor: "pointer", fontSize: 11, fontWeight: 600 }}>Delete</button>
+                          <button onClick={() => setPendingDeleteGroupId(null)} style={{ padding: "2px 8px", borderRadius: 6, border: `1px solid ${COLORS.border}`, background: "transparent", color: COLORS.dim, cursor: "pointer", fontSize: 11 }}>Cancel</button>
+                        </div>
+                      </div>
                     ) : (
-                      <span
-                        onClick={() => { setPendingGroupId(g.id); setNewGroupName(prev => ({ ...prev, [g.id]: g.name })); }}
-                        style={{ fontSize: 13, fontWeight: 600, color: COLORS.text, cursor: "pointer" }}
-                        onMouseEnter={e => (e.currentTarget as HTMLSpanElement).style.color = COLORS.accent}
-                        onMouseLeave={e => (e.currentTarget as HTMLSpanElement).style.color = COLORS.text}
-                      >
-                        {g.name}
-                      </span>
+                      <div style={{ display: "flex", alignItems: "center", gap: 4, width: "100%" }}>
+                        <span
+                          onClick={() => { setPendingGroupId(g.id); setNewGroupName(prev => ({ ...prev, [g.id]: g.name })); }}
+                          style={{ fontSize: 13, fontWeight: 600, color: COLORS.text, cursor: "pointer", flex: 1 }}
+                          onMouseEnter={e => (e.currentTarget as HTMLSpanElement).style.color = COLORS.accent}
+                          onMouseLeave={e => (e.currentTarget as HTMLSpanElement).style.color = COLORS.text}
+                        >
+                          {g.name}
+                        </span>
+                        <button
+                          onClick={() => setPendingDeleteGroupId(g.id)}
+                          style={{ background: "none", border: "none", color: "transparent", cursor: "pointer", fontSize: 14, padding: "0 2px", lineHeight: 1, flexShrink: 0 }}
+                          onMouseEnter={e => (e.currentTarget as HTMLButtonElement).style.color = COLORS.red}
+                          onMouseLeave={e => (e.currentTarget as HTMLButtonElement).style.color = "transparent"}
+                        >×</button>
+                      </div>
                     )}
                   </div>
                   {/* Exercises cell */}
