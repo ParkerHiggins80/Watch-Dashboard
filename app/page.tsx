@@ -26,7 +26,7 @@ export default function App() {
   const [currentPage, setCurrentPage] = useState(() => {
     if (typeof window !== "undefined") {
       const saved = sessionStorage.getItem("currentPage");
-      if (saved && saved !== "session") return saved;
+      if (saved) return saved;
     }
     return "home";
   });
@@ -105,7 +105,7 @@ export default function App() {
               }));
             if (d.activeSessions && Array.isArray(d.activeSessions)) {
               const validSessions = d.activeSessions.filter(
-                (s: any) => s?.id && s?.exercises?.length > 0 && s?.name,
+                (s: any) => s?.id && s?.name,
               );
               if (validSessions.length > 0) {
                 const loadedExercises = d.exercises ?? [];
@@ -315,7 +315,9 @@ export default function App() {
     console.log("[SAVE EFFECT] triggered, page:", currentPage, "saveEnabled:", saveEnabled);
     if (!user || !saveEnabled) return;
     console.log("[SAVE EFFECT] ref page:", currentPageRef.current);
-    if (currentPageRef.current === "session") return;
+    if (currentPageRef.current === "session") {
+      return; // Session saves handled explicitly via setSession
+    }
     if (saveTimeout.current) clearTimeout(saveTimeout.current);
     saveTimeout.current = setTimeout(async () => {
       const cleanSessions = activeSessions.map((s: any) => ({
@@ -329,6 +331,8 @@ export default function App() {
         _editing: s._editing ?? false,
         exercises: (s.exercises || []).map((ex: any) => ({
           name: ex.name,
+          exerciseId: ex.exerciseId ?? null,
+          variantName: ex.variantName ?? null,
           sets: (ex.sets || []).map((set: any) => ({
             weight: set.weight ?? 0,
             reps: set.reps ?? 0,
@@ -524,11 +528,8 @@ export default function App() {
         const exDef = exercises.find((e: any) => e.name === ex.name)
           ?? exercises.find((e: any) => ex.exerciseId && e.id === ex.exerciseId);
         const defVariant = exDef?.variants?.find((v: any) => v.isDefault);
-        const displayName = defVariant && defVariant.name !== "Standard"
-          ? `${defVariant.name} ${ex.name}`
-          : ex.name;
         return {
-          name: displayName,
+          name: ex.name,
           exerciseId: exDef?.id ?? null,
           variantName: defVariant?.name ?? null,
           sets: Array.from({ length: ex.sets }, () => ({
@@ -708,6 +709,8 @@ export default function App() {
         _savedHome: s._savedHome ?? false,
         exercises: (s.exercises || []).map((ex: any) => ({
           name: ex.name,
+          exerciseId: ex.exerciseId ?? null,
+          variantName: ex.variantName ?? null,
           sets: (ex.sets || []).map((set: any) => ({
             weight: set.weight ?? 0,
             reps: set.reps ?? 0,
@@ -775,6 +778,35 @@ export default function App() {
     setCurrentPage("home");
   };
 
+  const saveSessionToFirestore = (sessions: any[]) => {
+    if (!user) return;
+    const cleanSessions = sessions.map((s: any) => ({
+      id: s.id,
+      date: s.date,
+      name: s.name,
+      templateId: s.templateId ?? null,
+      startTime: s.startTime ?? null,
+      _completed: s._completed ?? false,
+      _editing: s._editing ?? false,
+      _pending: s._pending ?? false,
+      _savedHome: false,
+      exercises: (s.exercises || []).map((ex: any) => ({
+        name: ex.name,
+        exerciseId: ex.exerciseId ?? null,
+        variantName: ex.variantName ?? null,
+        sets: (ex.sets || []).map((set: any) => ({
+          weight: set.weight ?? 0,
+          reps: set.reps ?? 0,
+          type: set.type ?? "normal",
+          _touched: set._touched ?? false,
+        })),
+      })),
+      currentExerciseIndex: s.currentExerciseIndex ?? 0,
+      currentSetIndex: s.currentSetIndex ?? 0,
+    }));
+    setDoc(doc(db, "users", user.uid), { activeSessions: cleanSessions, activeSessionIndex }, { merge: true }).catch(() => {});
+  };
+
   const cancelWorkout = () => {
     // Remove the current in-progress session (don't remove completed ones)
     const updated = activeSessions.filter((_, i) => i !== activeSessionIndex);
@@ -784,9 +816,7 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (currentPage !== "session") {
-      sessionStorage.setItem("currentPage", currentPage);
-    }
+    sessionStorage.setItem("currentPage", currentPage);
   }, [currentPage]);
 
   const renderPage = () => {
@@ -798,6 +828,12 @@ export default function App() {
       activeSessions.length > 0 ? activeSessions[safeIndex] : null;
     if (currentPage === "session") {
       if (!currentSession?.exercises) {
+        if (!dataLoaded) return (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", color: COLORS.dim, fontSize: 16 }}>
+            Loading...
+          </div>
+        );
+        setCurrentPage("home");
         return null;
       }
       return (
@@ -810,6 +846,7 @@ export default function App() {
                 : sess,
             );
             setActiveSessions(updated);
+            saveSessionToFirestore(updated);
           }}
           exercises={exercises}
           setExercises={setExercises}

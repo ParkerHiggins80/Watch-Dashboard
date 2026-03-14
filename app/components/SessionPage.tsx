@@ -37,8 +37,8 @@ export default function SessionPage({
   setExercises,
   workoutGroups: workoutGroupsProp = [],
 }: SessionPageProps) {
-  const [currentExerciseIndex, setCurrentExerciseIndex] = useState(0);
-  const [currentSetIndex, setCurrentSetIndex] = useState(0);
+  const [currentExerciseIndex, setCurrentExerciseIndex] = useState(session.currentExerciseIndex ?? 0);
+  const [currentSetIndex, setCurrentSetIndex] = useState(session.currentSetIndex ?? 0);
   const [windowWidth, setWindowWidth] = useState(1200);
   const [windowHeight, setWindowHeight] = useState(800);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -148,8 +148,11 @@ const [mobileBottomTab, setMobileBottomTab] = useState<"previous" | "alltime">("
   const variantList: any[] = exerciseDef?.variants ?? [];
 
   useEffect(() => {
-    setCurrentSetIndex(0);
+    setCurrentSetIndex(session.currentSetIndex ?? 0);
     setShowVDrop(false);
+    if (session.currentExerciseIndex !== currentExerciseIndex) {
+      setSession({ ...session, currentExerciseIndex });
+    }
   }, [currentExerciseIndex]);
 
   // ─── Fetch exercise index from Firestore ───
@@ -168,7 +171,7 @@ const [mobileBottomTab, setMobileBottomTab] = useState<"previous" | "alltime">("
           ? (session._exercises || []).find((e: any) => e.id === sessionEx.exerciseId)
           : null;
         const exDef = exDefByName ?? exDefById;
-        const exId = exDef?.id ?? sessionEx?.exerciseId ?? exercise.name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
+        const exId = sessionEx?.exerciseId ?? exDef?.id ?? exercise.name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
         const snap = await getDoc(doc(db, "users", uid, "exerciseIndex", exId));
         if (snap.exists()) {
           setIndexData(snap.data().points || []);
@@ -207,16 +210,17 @@ const [mobileBottomTab, setMobileBottomTab] = useState<"previous" | "alltime">("
   useEffect(() => {
     setTouchedSets(prev => {
       const next = { ...prev };
-      exercise.sets.forEach((_: any, si: number) => {
-        delete next[`${safeExIdx}-${si}`];
+      exercise.sets.forEach((s: any, si: number) => {
+        if (!s._touched) delete next[`${safeExIdx}-${si}`];
       });
       return next;
     });
   }, [activeVariantName]);
   const previousWorkout = useMemo(() => {
+    
     if (indexData.length === 0) return null;
-    const isMultiVariant = variantList.length > 1;
     // Walk index points newest-first
+    const isMultiVariant = variantList.length > 1;
     const sorted = [...indexData].sort((a: any, b: any) => b.date.localeCompare(a.date));
     for (const point of sorted) {
       if (isMultiVariant && activeVariantName && activeVariantName !== "Standard") {
@@ -224,17 +228,22 @@ const [mobileBottomTab, setMobileBottomTab] = useState<"previous" | "alltime">("
         // Fall back to checking if this is the default variant and point has maxWeight
         const defaultVariantName = variantList.find((v: any) => v.isDefault)?.name;
         const hasVariantData = (point.variantWeights && activeVariantName in point.variantWeights) ||
-          (!point.variantWeights && activeVariantName === defaultVariantName && point.sets?.length > 0);
+          (!point.variantWeights && point.sets?.length > 0);
         if (!hasVariantData) continue;
         // Pull actual sets from history for this date, filtered by variant
         const workout = history.find((w: any) => w.date === point.date);
         if (!workout) continue;
         const baseName = getBaseName(safeExIdx);
         const found = workout.exercises.find((e: any) => e.name === baseName || e.name === exerciseName || (activeVariantName && e.name === `${activeVariantName} ${baseName}`));
-        if (!found) continue;
-        const sets = found.sets.filter((s: any) => s.type !== "warmup" && (s.variantName === activeVariantName || !s.variantName));
+        if (!found) {
+          // Exercise not in that history workout — use index point sets as fallback
+          if (point.sets?.length) return { date: point.date, sets: point.sets };
+          continue;
+        }
+        const strictSets = found.sets.filter((s: any) => s.type !== "warmup" && s.variantName === activeVariantName);
+        const looseSets = found.sets.filter((s: any) => s.type !== "warmup");
+        const sets = strictSets.length > 0 ? strictSets : looseSets;
         if (sets.length === 0) {
-          // Fallback: reconstruct from index point
           return { date: point.date, sets: point.sets ?? [] };
         }
         return { date: point.date, sets };
@@ -312,17 +321,30 @@ const [mobileBottomTab, setMobileBottomTab] = useState<"previous" | "alltime">("
   }, [indexData, exercise.name]);
 
   // ─── Set operations ───
+  useEffect(() => {
+    if (session.currentSetIndex !== currentSetIndex) {
+      setSession({ ...session, currentSetIndex });
+    }
+  }, [currentSetIndex]);
+
   const markTouched = (exIdx: number, setIdx: number) => {
     const key = `${exIdx}-${setIdx}`;
     if (!touchedSets[key]) {
       setTouchedSets((prev) => ({ ...prev, [key]: true }));
+      const prevWeight = previousWorkout?.sets[setIdx]?.weight ?? 0;
+      const prevReps = previousWorkout?.sets[setIdx]?.reps ?? 0;
       const updatedExercises = session.exercises.map((ex: any, ei: number) =>
         ei !== exIdx
           ? ex
           : {
               ...ex,
               sets: ex.sets.map((s: any, si: number) =>
-                si !== setIdx ? s : { ...s, _touched: true },
+                si !== setIdx ? s : {
+                  ...s,
+                  _touched: true,
+                  weight: s.weight > 0 ? s.weight : prevWeight,
+                  reps: s.reps > 0 ? s.reps : prevReps,
+                },
               ),
             },
       );
@@ -669,7 +691,7 @@ const [mobileBottomTab, setMobileBottomTab] = useState<"previous" | "alltime">("
               {session.exercises.map((ex: any, i: number) => {
                 const isActive = i === currentExerciseIndex;
                 const allTouched = ex.sets.every(
-                  (_: any, si: number) => touchedSets[`${i}-${si}`],
+                  (s: any, si: number) => touchedSets[`${i}-${si}`] && (s.weight > 0 || s.reps > 0),
                 );
                 const isDragOver = dragOverIdx === i && dragIdx !== i;
                 const isDragging = dragIdx === i;
@@ -941,7 +963,7 @@ const [mobileBottomTab, setMobileBottomTab] = useState<"previous" | "alltime">("
                     fontWeight: 600,
                     boxSizing: "border-box" as const,
                   }}
-                  value={isTouched ? currentSet.weight : (previousWorkout?.sets[currentSetIndex]?.weight || "")}
+                  value={(isTouched && currentSet.weight > 0) ? currentSet.weight : (!isTouched ? (previousWorkout?.sets[currentSetIndex]?.weight || "") : "")}
                   placeholder="0"
                   onFocus={() =>
                     markTouched(currentExerciseIndex, currentSetIndex)
@@ -998,7 +1020,7 @@ const [mobileBottomTab, setMobileBottomTab] = useState<"previous" | "alltime">("
                     fontWeight: 600,
                     boxSizing: "border-box" as const,
                   }}
-                  value={isTouched ? currentSet.reps : (previousWorkout?.sets[currentSetIndex]?.reps || "")}
+                  value={(isTouched && currentSet.reps > 0) ? currentSet.reps : (!isTouched ? (previousWorkout?.sets[currentSetIndex]?.reps || "") : "")}
                   placeholder="0"
                   onFocus={() =>
                     markTouched(currentExerciseIndex, currentSetIndex)
@@ -1527,7 +1549,7 @@ const [mobileBottomTab, setMobileBottomTab] = useState<"previous" | "alltime">("
               {session.exercises.map((ex: any, i: number) => {
                 const isActive = i === currentExerciseIndex;
                 const allTouched = ex.sets.every(
-                  (_: any, si: number) => touchedSets[`${i}-${si}`],
+                  (s: any, si: number) => touchedSets[`${i}-${si}`] && (s.weight > 0 || s.reps > 0),
                 );
                 const isLast = i === session.exercises.length - 1;
                 const isDragging = desktopDragIdx === i;
@@ -1976,7 +1998,7 @@ const [mobileBottomTab, setMobileBottomTab] = useState<"previous" | "alltime">("
                     fontWeight: 600,
                     boxSizing: "border-box" as const,
                   }}
-                  value={isTouched ? currentSet.weight : (previousWorkout?.sets[currentSetIndex]?.weight || "")}
+                  value={(isTouched && currentSet.weight > 0) ? currentSet.weight : (!isTouched ? (previousWorkout?.sets[currentSetIndex]?.weight || "") : "")}
                   placeholder="0"
                   onFocus={() =>
                     markTouched(currentExerciseIndex, currentSetIndex)
@@ -2033,7 +2055,7 @@ const [mobileBottomTab, setMobileBottomTab] = useState<"previous" | "alltime">("
                     fontWeight: 600,
                     boxSizing: "border-box" as const,
                   }}
-                  value={isTouched ? currentSet.reps : (previousWorkout?.sets[currentSetIndex]?.reps || "")}
+                  value={(isTouched && currentSet.reps > 0) ? currentSet.reps : (!isTouched ? (previousWorkout?.sets[currentSetIndex]?.reps || "") : "")}
                   placeholder="0"
                   onFocus={() =>
                     markTouched(currentExerciseIndex, currentSetIndex)
