@@ -148,7 +148,7 @@ const [mobileBottomTab, setMobileBottomTab] = useState<"previous" | "alltime">("
   const variantList: any[] = exerciseDef?.variants ?? [];
 
   useEffect(() => {
-    setCurrentSetIndex(session.currentSetIndex ?? 0);
+    setCurrentSetIndex(0);
     setShowVDrop(false);
     if (session.currentExerciseIndex !== currentExerciseIndex) {
       setSession({ ...session, currentExerciseIndex });
@@ -963,7 +963,7 @@ const [mobileBottomTab, setMobileBottomTab] = useState<"previous" | "alltime">("
                     fontWeight: 600,
                     boxSizing: "border-box" as const,
                   }}
-                  value={(isTouched && currentSet.weight > 0) ? currentSet.weight : (!isTouched ? (previousWorkout?.sets[currentSetIndex]?.weight || "") : "")}
+                  value={isTouched ? currentSet.weight : (previousWorkout?.sets[currentSetIndex]?.weight ?? 0)}
                   placeholder="0"
                   onFocus={() =>
                     markTouched(currentExerciseIndex, currentSetIndex)
@@ -1020,7 +1020,7 @@ const [mobileBottomTab, setMobileBottomTab] = useState<"previous" | "alltime">("
                     fontWeight: 600,
                     boxSizing: "border-box" as const,
                   }}
-                  value={(isTouched && currentSet.reps > 0) ? currentSet.reps : (!isTouched ? (previousWorkout?.sets[currentSetIndex]?.reps || "") : "")}
+                  value={isTouched ? currentSet.reps : (previousWorkout?.sets[currentSetIndex]?.reps ?? 0)}
                   placeholder="0"
                   onFocus={() =>
                     markTouched(currentExerciseIndex, currentSetIndex)
@@ -1998,7 +1998,7 @@ const [mobileBottomTab, setMobileBottomTab] = useState<"previous" | "alltime">("
                     fontWeight: 600,
                     boxSizing: "border-box" as const,
                   }}
-                  value={(isTouched && currentSet.weight > 0) ? currentSet.weight : (!isTouched ? (previousWorkout?.sets[currentSetIndex]?.weight || "") : "")}
+                  value={isTouched ? currentSet.weight : (previousWorkout?.sets[currentSetIndex]?.weight ?? 0)}
                   placeholder="0"
                   onFocus={() =>
                     markTouched(currentExerciseIndex, currentSetIndex)
@@ -2055,7 +2055,7 @@ const [mobileBottomTab, setMobileBottomTab] = useState<"previous" | "alltime">("
                     fontWeight: 600,
                     boxSizing: "border-box" as const,
                   }}
-                  value={(isTouched && currentSet.reps > 0) ? currentSet.reps : (!isTouched ? (previousWorkout?.sets[currentSetIndex]?.reps || "") : "")}
+                  value={isTouched ? currentSet.reps : (previousWorkout?.sets[currentSetIndex]?.reps ?? 0)}
                   placeholder="0"
                   onFocus={() =>
                     markTouched(currentExerciseIndex, currentSetIndex)

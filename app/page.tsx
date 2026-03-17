@@ -154,7 +154,7 @@ export default function App() {
               await import("firebase/firestore");
             const metaRef = doc(db, "users", u.uid, "exerciseIndex", "_meta");
             const metaSnap = await getDocFn(metaRef);
-            if (!metaSnap.exists() || !metaSnap.data()?.backfilled || !metaSnap.data()?.backfilledV2 || !metaSnap.data()?.backfilledV3 || !metaSnap.data()?.backfilledV4) {
+            if (!metaSnap.exists() || !metaSnap.data()?.backfilled || !metaSnap.data()?.backfilledV2 || !metaSnap.data()?.backfilledV3 || !metaSnap.data()?.backfilledV4 || !metaSnap.data()?.backfilledV5) {
               // Load current exercises to get ids
               const userSnap = await getDoc(doc(db, "users", u.uid));
               const userExercises: any[] = userSnap.exists()
@@ -285,12 +285,33 @@ export default function App() {
                 console.error("Merge backfill error:", err);
               }
 
+              // ── Backfill V5: strip _templates, _exercises, _workoutGroups from workout docs ──
+              try {
+                const { collection: col5, getDocs: getDocs5, writeBatch: wb5, doc: doc5 } = await import("firebase/firestore");
+                const allWorkoutsSnap5 = await getDocs5(col5(db, "users", u.uid, "workouts"));
+                const debloatBatch = wb5(db);
+                let debloatCount = 0;
+                for (const wDoc of allWorkoutsSnap5.docs) {
+                  const w = wDoc.data();
+                  if (!w._templates && !w._exercises && !w._workoutGroups) continue;
+                  const { _templates: _t, _exercises: _e, _workoutGroups: _wg, ...clean } = w;
+                  debloatBatch.set(doc5(db, "users", u.uid, "workouts", wDoc.id), clean);
+                  debloatCount++;
+                  if (debloatCount >= 400) break;
+                }
+                if (debloatCount > 0) await debloatBatch.commit();
+                console.log(`Debloat backfill: cleaned ${debloatCount} workout(s)`);
+              } catch (err) {
+                console.error("Debloat backfill error:", err);
+              }
+
               // Mark backfill complete
               await setDocFn(metaRef, {
                 backfilled: true,
                 backfilledV2: true,
                 backfilledV3: true,
                 backfilledV4: true,
+                backfilledV5: true,
                 backfilledAt: Date.now(),
               });
               console.log("Exercise index backfill complete");
@@ -584,8 +605,9 @@ export default function App() {
         ),
       }))
       .filter((ex: any) => ex.sets.length > 0);
+    const { _templates, _exercises, _workoutGroups, ...sessionClean } = session;
     const workout = {
-      ...session,
+      ...sessionClean,
       endTime: Date.now(),
       exercises: cleanExercises,
     };

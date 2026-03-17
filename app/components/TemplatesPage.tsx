@@ -197,6 +197,7 @@ export function WorkoutPopup({ initial, groups, onSave, onClose, onMerge, onDele
   const [stdRepRange, setStdRepRange]     = useState(initial?.repRange ?? "8-12");
   const [stdDataFields, setStdDataFields] = useState<DataField[]>([...DEFAULT_DATA_FIELDS]);
   const [showChart, setShowChart]         = useState(false);
+const [pendingDeleteVariantId, setPendingDeleteVariantId] = useState<string | null>(null);
   const [chartData, setChartData]         = useState<any[]>([]);
   const [chartVariants, setChartVariants] = useState<{ name: string; color: string }[]>([]);
   const [chartLoading, setChartLoading]   = useState(false);
@@ -582,7 +583,7 @@ export function WorkoutPopup({ initial, groups, onSave, onClose, onMerge, onDele
                     )}
                     {(
                       <button
-                        onClick={() => removeVariant(v.id)}
+                        onClick={() => setPendingDeleteVariantId(v.id)}
                         style={{ background: "none", border: "none", color: COLORS.red, cursor: "pointer", fontSize: 14, padding: "0 2px" }}
                       >×</button>
                     )}
@@ -758,6 +759,58 @@ export function WorkoutPopup({ initial, groups, onSave, onClose, onMerge, onDele
               )}
             </div>
         </div>}
+
+        {/* ── Delete Variant Confirm ── */}
+        {pendingDeleteVariantId && (() => {
+          const v = variants.find(vv => vv.id === pendingDeleteVariantId);
+          return (
+            <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1100 }}>
+              <div style={{ background: COLORS.card, borderRadius: 14, padding: 24, width: 420, border: `1px solid ${COLORS.border}`, display: "flex", flexDirection: "column", gap: 14 }} onClick={e => e.stopPropagation()}>
+                <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: COLORS.red }}>⚠ Delete "{v?.name}" variant?</h3>
+                <p style={{ margin: 0, fontSize: 13, color: COLORS.dim, lineHeight: 1.6 }}>
+                  All logged history and progress data for the <strong style={{ color: COLORS.text }}>{v?.name}</strong> variant will be permanently deleted from your exercise index.
+                </p>
+                <p style={{ margin: 0, fontSize: 12, color: COLORS.red, fontWeight: 600 }}>This cannot be undone.</p>
+                <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                  <button onClick={() => setPendingDeleteVariantId(null)} style={{ padding: "8px 16px", borderRadius: 8, border: `1px solid ${COLORS.border}`, background: "transparent", color: COLORS.dim, cursor: "pointer", fontWeight: 600, fontSize: 13 }}>Cancel</button>
+                  <button
+                    onClick={async () => {
+                      if (!initial?.id || !v) { removeVariant(pendingDeleteVariantId); setPendingDeleteVariantId(null); return; }
+                      try {
+                        const { getAuth } = await import("firebase/auth");
+                        const { doc, getDoc, setDoc } = await import("firebase/firestore");
+                        const { db } = await import("../firebase");
+                        const uid = getAuth().currentUser?.uid;
+                        if (uid) {
+                          const ref = doc(db, "users", uid, "exerciseIndex", initial.id);
+                          const snap = await getDoc(ref);
+                          if (snap.exists()) {
+                            const points = snap.data().points || [];
+                            const cleaned = points.map((p: any) => {
+                              if (!p.variantWeights) return p;
+                              const vw = { ...p.variantWeights };
+                              delete vw[v.name];
+                              const remaining = Object.values(vw) as number[];
+                              return {
+                                ...p,
+                                variantWeights: vw,
+                                maxWeight: remaining.length > 0 ? Math.max(...remaining) : p.maxWeight,
+                              };
+                            }).filter((p: any) => !p.variantWeights || Object.keys(p.variantWeights).length > 0);
+                            await setDoc(ref, { ...snap.data(), points: cleaned });
+                          }
+                        }
+                      } catch (err) { console.error("Failed to delete variant data:", err); }
+                      removeVariant(pendingDeleteVariantId);
+                      setPendingDeleteVariantId(null);
+                    }}
+                    style={{ padding: "8px 16px", borderRadius: 8, border: "none", background: COLORS.red, color: "#fff", cursor: "pointer", fontWeight: 700, fontSize: 13 }}
+                  >Delete Permanently</button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
 
         {/* ── Groups ── */}
         <div>
