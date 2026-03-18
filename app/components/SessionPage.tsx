@@ -67,12 +67,14 @@ const [mobileBottomTab, setMobileBottomTab] = useState<"previous" | "alltime">("
   const [showMobileAddModal, setShowMobileAddModal] = useState(false);
   const [dragIdx, setDragIdx] = useState<number | null>(null);
   const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
+  const [showExerciseDrawer, setShowExerciseDrawer] = useState(false);
   const scrollRef = React.useRef<HTMLDivElement>(null);
   const dragIdxRef = React.useRef<number | null>(null);
   const pillRefs = React.useRef<(HTMLDivElement | null)[]>([]);
   const sessionRef = React.useRef<any>(session);
   const desktopDragIdxRef = React.useRef<number | null>(null);
   const desktopPillRefs = React.useRef<(HTMLDivElement | null)[]>([]);
+  const drawerRowRefs = React.useRef<(HTMLDivElement | null)[]>([]);
   const [desktopDragIdx, setDesktopDragIdx] = useState<number | null>(null);
   const [desktopDragOverIdx, setDesktopDragOverIdx] = useState<number | null>(null);
   // variant selection per exercise index
@@ -346,8 +348,8 @@ const [mobileBottomTab, setMobileBottomTab] = useState<"previous" | "alltime">("
                 si !== setIdx ? s : {
                   ...s,
                   _touched: true,
-                  weight: s.weight > 0 ? s.weight : prevWeight,
-                  reps: s.reps > 0 ? s.reps : prevReps,
+                  weight: prevWeight,
+                  reps: prevReps,
                 },
               ),
             },
@@ -375,16 +377,52 @@ const [mobileBottomTab, setMobileBottomTab] = useState<"previous" | "alltime">("
   };
 
   const adjustWeight = (delta: number) => {
-    const current = currentSet?.weight || 0;
-    const newVal = Math.max(0, Math.round((current + delta) / 2.5) * 2.5);
-    updateSet(currentSetIndex, "weight", newVal);
-  };
+  const prevWeight = previousWorkout?.sets[currentSetIndex]?.weight ?? 0;
+  const prevReps = previousWorkout?.sets[currentSetIndex]?.reps ?? 0;
+  const base = isTouched ? (currentSet?.weight ?? 0) : prevWeight;
+  const newVal = Math.max(0, Math.round((base + delta) / 2.5) * 2.5);
 
-  const adjustReps = (delta: number) => {
-    const current = currentSet?.reps || 0;
-    const newVal = Math.max(0, Math.round(current + delta));
+  const key = `${currentExerciseIndex}-${currentSetIndex}`;
+  if (!touchedSets[key]) {
+    setTouchedSets(prev => ({ ...prev, [key]: true }));
+    const variantName = activeVariant?.name ?? null;
+    const updatedExercises = session.exercises.map((ex: any, ei: number) =>
+      ei !== currentExerciseIndex ? ex : {
+        ...ex, variantName,
+        sets: ex.sets.map((s: any, si: number) =>
+          si !== currentSetIndex ? s : { ...s, _touched: true, weight: newVal, reps: prevReps, variantName }
+        ),
+      }
+    );
+    setSession({ ...session, exercises: updatedExercises });
+  } else {
+    updateSet(currentSetIndex, "weight", newVal);
+  }
+};
+
+const adjustReps = (delta: number) => {
+  const prevWeight = previousWorkout?.sets[currentSetIndex]?.weight ?? 0;
+  const prevReps = previousWorkout?.sets[currentSetIndex]?.reps ?? 0;
+  const base = isTouched ? (currentSet?.reps ?? 0) : prevReps;
+  const newVal = Math.max(0, Math.round(base + delta));
+
+  const key = `${currentExerciseIndex}-${currentSetIndex}`;
+  if (!touchedSets[key]) {
+    setTouchedSets(prev => ({ ...prev, [key]: true }));
+    const variantName = activeVariant?.name ?? null;
+    const updatedExercises = session.exercises.map((ex: any, ei: number) =>
+      ei !== currentExerciseIndex ? ex : {
+        ...ex, variantName,
+        sets: ex.sets.map((s: any, si: number) =>
+          si !== currentSetIndex ? s : { ...s, _touched: true, weight: prevWeight, reps: newVal, variantName }
+        ),
+      }
+    );
+    setSession({ ...session, exercises: updatedExercises });
+  } else {
     updateSet(currentSetIndex, "reps", newVal);
-  };
+  }
+};
 
   const addSet = () => {
     const updated = { ...session };
@@ -648,6 +686,22 @@ const [mobileBottomTab, setMobileBottomTab] = useState<"previous" | "alltime">("
               marginBottom: 8,
             }}
           >
+            <button
+              onClick={() => setShowExerciseDrawer(true)}
+              style={{
+                padding: "6px 8px",
+                borderRadius: 8,
+                border: `1px solid ${COLORS.border}`,
+                background: "transparent",
+                color: COLORS.dim,
+                cursor: "pointer",
+                fontSize: 14,
+                lineHeight: 1,
+                flexShrink: 0,
+              }}
+            >
+              ☰
+            </button>
             <div
               style={{
                 padding: "6px 12px",
@@ -708,92 +762,17 @@ const [mobileBottomTab, setMobileBottomTab] = useState<"previous" | "alltime">("
                       alignItems: "center",
                       flexShrink: 0,
                       borderRadius: 20,
-                      border: isDragging
-                        ? `2px solid ${COLORS.green}`
-                        : isDragOver
-                          ? `2px solid ${COLORS.green}`
-                          : isActive
-                            ? `2px solid ${COLORS.accent}`
-                            : `1px solid ${COLORS.border}`,
-                      background: isDragging
-                        ? COLORS.green + "33"
-                        : isDragOver
-                          ? COLORS.green + "22"
-                          : isActive ? COLORS.accent + "22" : "transparent",
+                      border: isActive
+                        ? `2px solid ${COLORS.accent}`
+                        : `1px solid ${COLORS.border}`,
+                      background: isActive ? COLORS.accent + "22" : "transparent",
                       overflow: "hidden",
-                      transition: "border 0.1s, background 0.1s",
-                      boxShadow: isDragging ? "0 2px 8px rgba(0,0,0,0.4)" : "none",
                     }}
                   >
-                    {session.exercises.length > 1 && isActive && (
-                      <span
-                        style={{
-                          padding: "6px 4px 6px 8px",
-                          color: COLORS.accent,
-                          fontSize: 11,
-                          cursor: "grab",
-                          lineHeight: 1,
-                          flexShrink: 0,
-                          touchAction: "none",
-                        }}
-                        onPointerDown={(e) => {
-                          e.stopPropagation();
-                          const startX = e.clientX;
-                          const hoverRef = { current: i };
-                          let started = false;
-
-                          const onUp = () => {
-                            dragIdxRef.current = null;
-                            setDragIdx(null);
-                            setDragOverIdx(null);
-                            window.removeEventListener("pointermove", onMove);
-                            window.removeEventListener("pointerup", onUp);
-                          };
-
-                          const onMove = (ev: PointerEvent) => {
-                            if (!started) {
-                              if (Math.abs(ev.clientX - startX) < 6) return;
-                              started = true;
-                              dragIdxRef.current = i;
-                              setDragIdx(i);
-                            }
-                            const scrollEl = scrollRef.current;
-                            if (!scrollEl) return;
-                            let target = hoverRef.current;
-                            pillRefs.current.forEach((pill, pi) => {
-                              if (!pill || pi === dragIdxRef.current) return;
-                              const r = pill.getBoundingClientRect();
-                              if (ev.clientX > r.left && ev.clientX < r.right) {
-                                target = pi;
-                              }
-                            });
-                            if (target !== hoverRef.current) {
-                              hoverRef.current = target;
-                              const from = dragIdxRef.current!;
-                              const updated = { ...sessionRef.current };
-                              const exs = [...updated.exercises];
-                              const [moved] = exs.splice(from, 1);
-                              exs.splice(target, 0, moved);
-                              updated.exercises = exs;
-                              setSession(updated);
-                              dragIdxRef.current = target;
-                              setDragIdx(target);
-                              setDragOverIdx(target);
-                              setCurrentExerciseIndex(target);
-                            }
-                          };
-
-                          window.addEventListener("pointermove", onMove);
-                          window.addEventListener("pointerup", onUp);
-                        }}
-                      >
-                        ☰
-                      </span>
-                    )}
                     <button
                       onClick={() => setCurrentExerciseIndex(i)}
                       style={{
-                        padding: session.exercises.length > 1 ? "6px 4px" : "6px 10px 6px 14px",
+                        padding: "6px 14px",
                         border: "none",
                         background: "transparent",
                         color: allTouched ? COLORS.green : isActive ? COLORS.text : COLORS.dim,
@@ -805,32 +784,9 @@ const [mobileBottomTab, setMobileBottomTab] = useState<"previous" | "alltime">("
                     >
                       {ex.name}
                     </button>
-                    {session.exercises.length > 1 && (
-                      <button
-                        onClick={(e) => { e.stopPropagation(); removeExercise(i); }}
-                        style={{
-                          padding: "6px 8px 6px 2px", border: "none",
-                          background: "transparent", color: COLORS.red,
-                          cursor: "pointer", fontSize: 11, lineHeight: 1,
-                        }}
-                      >
-                        ✕
-                      </button>
-                    )}
                   </div>
                 );
               })}
-              <button
-                onClick={() => { setShowMobileAddModal(true); setAddSearch(""); }}
-                style={{
-                  padding: "6px 14px", borderRadius: 20,
-                  border: `1px dashed ${COLORS.border}`, background: "transparent",
-                  color: COLORS.dim, cursor: "pointer", fontSize: 12,
-                  whiteSpace: "nowrap", flexShrink: 0,
-                }}
-              >
-                + Add
-              </button>
             </div>
           </div>
 
@@ -1170,6 +1126,185 @@ const [mobileBottomTab, setMobileBottomTab] = useState<"previous" | "alltime">("
             </div>
           </div>
         </div>
+
+        {/* Exercise Drawer (mobile) */}
+        {showExerciseDrawer && (
+          <>
+            {/* Backdrop — only covers right portion, tap to close */}
+            <div
+              onClick={() => setShowExerciseDrawer(false)}
+              style={{
+                position: "fixed", inset: 0,
+                background: "rgba(0,0,0,0.45)", zIndex: 999,
+              }}
+            />
+            {/* Slide-in panel from left */}
+            <div style={{
+              position: "fixed",
+              top: 0, left: 0, bottom: 0,
+              width: "82vw", maxWidth: 320,
+              background: COLORS.card,
+              borderRight: `1px solid ${COLORS.border}`,
+              zIndex: 1000,
+              display: "flex", flexDirection: "column",
+              overflow: "hidden",
+            }}>
+              {/* Header */}
+              <div style={{
+                padding: "16px 14px 12px",
+                borderBottom: `1px solid ${COLORS.border}`,
+                display: "flex", alignItems: "center", justifyContent: "space-between",
+              }}>
+                <span style={{ fontWeight: 700, fontSize: 16 }}>{session.name}</span>
+                <button
+                  onClick={() => setShowExerciseDrawer(false)}
+                  style={{
+                    background: "none", border: "none", color: COLORS.dim,
+                    cursor: "pointer", fontSize: 20, lineHeight: 1, padding: "2px 4px",
+                  }}
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Exercise list */}
+              <div style={{ flex: 1, overflowY: "auto" }}>
+                {session.exercises.map((ex: any, i: number) => {
+                  const isActive = i === currentExerciseIndex;
+                  const isDrawerHighlighted = i === currentExerciseIndex;
+                  return (
+                    <div
+                      key={i}
+                      ref={el => { drawerRowRefs.current[i] = el; }}
+                      style={{
+                        display: "flex", alignItems: "center", gap: 8,
+                        padding: "12px 14px",
+                        borderBottom: `1px solid ${COLORS.border}`,
+                        background: dragIdx === i
+                          ? COLORS.green + "33"
+                          : isDrawerHighlighted ? COLORS.accent + "22" : "transparent",
+                        borderLeft: isDrawerHighlighted ? `3px solid ${COLORS.accent}` : "3px solid transparent",
+                      }}
+                    >
+                      {/* Drag handle — only on highlighted row */}
+                      {isDrawerHighlighted ? (
+                        <span
+                          style={{
+                            color: COLORS.accent, fontSize: 14,
+                            cursor: "grab", flexShrink: 0, touchAction: "none",
+                            padding: "2px 4px",
+                          }}
+                          onPointerDown={(e) => {
+                            e.stopPropagation();
+                            e.preventDefault();
+                            const drawerDragIdxRef = { current: i };
+                            const hoverRef = { current: i };
+                            setDragIdx(i);
+                            const onUp = () => {
+                              drawerDragIdxRef.current = -1;
+                              setDragIdx(null);
+                              setDragOverIdx(null);
+                              window.removeEventListener("pointermove", onMove);
+                              window.removeEventListener("pointerup", onUp);
+                            };
+                            const onMove = (ev: PointerEvent) => {
+                              let target = hoverRef.current;
+                              drawerRowRefs.current.forEach((row, pi) => {
+                                if (!row || pi === drawerDragIdxRef.current) return;
+                                const r = row.getBoundingClientRect();
+                                if (ev.clientY > r.top && ev.clientY < r.bottom) target = pi;
+                              });
+                              if (target !== hoverRef.current) {
+                                hoverRef.current = target;
+                                const from = drawerDragIdxRef.current;
+                                const updated = { ...sessionRef.current };
+                                const exs = [...updated.exercises];
+                                const [moved] = exs.splice(from, 1);
+                                exs.splice(target, 0, moved);
+                                updated.exercises = exs;
+                                setSession(updated);
+                                // remap touchedSets to follow exercises
+                                setTouchedSets(prev => {
+                                  const next: Record<string, boolean> = {};
+                                  const oldToNew: Record<number, number> = {};
+                                  const tmpOrder = Array.from({ length: sessionRef.current.exercises.length }, (_, idx) => idx);
+                                  tmpOrder.splice(target, 0, tmpOrder.splice(from, 1)[0]);
+                                  tmpOrder.forEach((oldIdx, newIdx) => { oldToNew[oldIdx] = newIdx; });
+                                  Object.keys(prev).forEach(key => {
+                                    const [ei, si] = key.split("-").map(Number);
+                                    if (oldToNew[ei] !== undefined) next[`${oldToNew[ei]}-${si}`] = prev[key];
+                                  });
+                                  return next;
+                                });
+                                drawerDragIdxRef.current = target;
+                                setDragIdx(target);
+                                setDragOverIdx(target);
+                                setCurrentExerciseIndex(target);
+                              }
+                            };
+                            window.addEventListener("pointermove", onMove);
+                            window.addEventListener("pointerup", onUp);
+                          }}
+                        >
+                          ☰
+                        </span>
+                      ) : (
+                        <div style={{ width: 22, flexShrink: 0 }} />
+                      )}
+
+                      {/* Name button — first tap highlights, second tap navigates + closes */}
+                      <button
+                        onClick={() => {
+                          if (isActive) {
+                            setShowExerciseDrawer(false);
+                          } else {
+                            setCurrentExerciseIndex(i);
+                          }
+                        }}
+                        style={{
+                          flex: 1, background: "none", border: "none", padding: "2px 0",
+                          color: isDrawerHighlighted ? COLORS.text : COLORS.dim,
+                          fontWeight: isDrawerHighlighted ? 700 : 400,
+                          fontSize: 15, cursor: "pointer", textAlign: "left" as const,
+                        }}
+                      >
+                        {ex.name}
+                      </button>
+
+                      {/* Remove */}
+                      <button
+                        onClick={() => removeExercise(i)}
+                        disabled={session.exercises.length <= 1}
+                        style={{
+                          background: "none", border: "none", color: COLORS.red,
+                          cursor: session.exercises.length <= 1 ? "default" : "pointer",
+                          fontSize: 14, padding: "2px 4px",
+                          opacity: session.exercises.length <= 1 ? 0.3 : 1,
+                        }}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Add Workout footer */}
+              <button
+                onClick={() => { setShowExerciseDrawer(false); setShowMobileAddModal(true); setAddSearch(""); }}
+                style={{
+                  width: "100%", padding: "14px 14px",
+                  background: "none", border: "none",
+                  borderTop: `1px solid ${COLORS.border}`,
+                  color: COLORS.accent, cursor: "pointer",
+                  textAlign: "left" as const, fontSize: 14, fontWeight: 600,
+                }}
+              >
+                + Add Workout
+              </button>
+            </div>
+          </>
+        )}
 
         {/* New Exercise Popup (mobile) */}
         {showNewExercisePopup && (

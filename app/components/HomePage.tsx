@@ -14,7 +14,11 @@ interface HomePageProps {
   schedule: Record<string, string>;
   templates: any[];
   history: any[];
-  onStartWorkout: (template: any, editingCompleted?: any, dateStr?: string) => void;
+  onStartWorkout: (
+    template: any,
+    editingCompleted?: any,
+    dateStr?: string,
+  ) => void;
   tasks: string[];
   taskCompletions: Record<string, boolean[]>;
   setTaskCompletions: (completions: Record<string, boolean[]>) => void;
@@ -119,7 +123,7 @@ export default function HomePage({
   );
   const completedSessions = activeSessions.filter((s) => s._completed);
   const todayLocal = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}-${String(new Date().getDate()).padStart(2, "0")}`;
-const isToday = selectedDateStr === todayLocal;
+  const isToday = selectedDateStr === todayLocal;
   const canAddSession =
     activeSessions.length < 5 &&
     !activeSessions.some((s) => s._pending) &&
@@ -238,19 +242,30 @@ const isToday = selectedDateStr === todayLocal;
     const getVolume = (w: any) =>
       (w.exercises || []).reduce((total: number, ex: any) => {
         const template = templates.find((t) =>
-          t.exercises?.some((te: any) => te.name === ex.name)
+          t.exercises?.some((te: any) => te.name === ex.name),
         );
-        const templateEx = template?.exercises?.find((te: any) => te.name === ex.name);
+        const templateEx = template?.exercises?.find(
+          (te: any) => te.name === ex.name,
+        );
         const repRange = templateEx?.repRange || "8-12";
         const [minRep, maxRep] = repRange.split("-").map(Number);
         const validSets = (ex.sets || []).filter((s: any) => {
           const r = Number(s.reps);
           return r >= (minRep || 1) && r <= (maxRep || 999);
         });
-        return total + validSets.reduce((st: number, s: any) => st + Number(s.weight) * Number(s.reps), 0);
+        return (
+          total +
+          validSets.reduce(
+            (st: number, s: any) => st + Number(s.weight) * Number(s.reps),
+            0,
+          )
+        );
       }, 0);
 
-    const dayVolume = workoutsOnDay.reduce((sum: number, w: any) => sum + getVolume(w), 0);
+    const dayVolume = workoutsOnDay.reduce(
+      (sum: number, w: any) => sum + getVolume(w),
+      0,
+    );
 
     // Find previous workout(s) with same name for comparison
     const prevWorkouts = workoutsOnDay.flatMap((w: any) => {
@@ -262,26 +277,29 @@ const isToday = selectedDateStr === todayLocal;
 
     let prevVolume: number;
     if (prevWorkouts.length > 0) {
-      prevVolume = prevWorkouts.reduce((sum: number, w: any) => sum + getVolume(w), 0) / prevWorkouts.length;
+      prevVolume =
+        prevWorkouts.reduce((sum: number, w: any) => sum + getVolume(w), 0) /
+        prevWorkouts.length;
     } else {
       // No matching previous — compare against global average
       const allVolumes = history
         .filter((h) => h.date !== dateStr)
         .map((h) => getVolume(h))
         .filter((v) => v > 0);
-      prevVolume = allVolumes.length > 0
-        ? allVolumes.reduce((a, b) => a + b, 0) / allVolumes.length
-        : dayVolume;
+      prevVolume =
+        allVolumes.length > 0
+          ? allVolumes.reduce((a, b) => a + b, 0) / allVolumes.length
+          : dayVolume;
     }
 
     if (prevVolume === 0) return "#1e3a5f";
     const pct = (dayVolume - prevVolume) / prevVolume;
 
     // 4 levels
-    if (pct >= 0.1)  return "#2563eb"; // much better  - bright blue
-    if (pct >= 0)    return "#1d4ed8"; // better        - medium blue
+    if (pct >= 0.1) return "#2563eb"; // much better  - bright blue
+    if (pct >= 0) return "#1d4ed8"; // better        - medium blue
     if (pct >= -0.1) return "#1e3a5f"; // worse         - dark blue
-    return "#162d4a";                  // much worse    - very dark blue
+    return "#162d4a"; // much worse    - very dark blue
   };
 
   const getFullYearGrid = () => {
@@ -298,7 +316,7 @@ const isToday = selectedDateStr === todayLocal;
     const end = new Date(year, 11, 31);
     while (cursor <= end) {
       const dateStr = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}-${String(cursor.getDate()).padStart(2, "0")}`;
-      const found = heatmapDays.find(d => d.date === dateStr);
+      const found = heatmapDays.find((d) => d.date === dateStr);
       allDays.push(found || { date: dateStr, gym: false });
       cursor.setDate(cursor.getDate() + 1);
     }
@@ -368,64 +386,66 @@ const isToday = selectedDateStr === todayLocal;
       {(!isMobile || mobileTab !== "weekly") && (
         <div style={{ position: "relative", marginBottom: 20 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <h1
-            onClick={() => setShowCalendar(!showCalendar)}
-            onMouseEnter={() => setShowDateTooltip(true)}
-            onMouseLeave={() => setShowDateTooltip(false)}
-            style={{
-              fontSize: 28,
-              fontWeight: 700,
-              margin: 0,
-              cursor: "pointer",
-              userSelect: "none",
-              display: "inline",
-              position: "relative",
-            }}
-          >
-            {getSelectedFormattedDate()}{" "}
-            <span style={{ fontSize: 16, color: COLORS.dim }}>▼</span>
-            {selectedDateStr !== todayLocal && (
-              <button
-                onClick={(e) => { e.stopPropagation(); setSelectedDate(new Date()); }}
-                style={{
-                  marginLeft: 10,
-                  padding: "4px 12px",
-                  borderRadius: 8,
-                  border: `1px solid ${COLORS.accent}`,
-                  background: "transparent",
-                  color: COLORS.accent,
-                  cursor: "pointer",
-                  fontWeight: 600,
-                  fontSize: 13,
-                  verticalAlign: "middle",
-                }}
-              >
-                Today
-              </button>
-            )}
-            {showDateTooltip && !showCalendar && (
-              <div
-                style={{
-                  position: "absolute",
-                  top: "100%",
-                  left: 0,
-                  marginTop: 4,
-                  background: COLORS.inner,
-                  border: `1px solid ${COLORS.border}`,
-                  borderRadius: 8,
-                  padding: "6px 10px",
-                  fontSize: 13,
-                  fontWeight: 400,
-                  color: COLORS.dim,
-                  whiteSpace: "nowrap",
-                  zIndex: 10,
-                }}
-              >
-                Click to change date
-              </div>
-            )}
-          </h1>
-
+            <h1
+              onClick={() => setShowCalendar(!showCalendar)}
+              onMouseEnter={() => setShowDateTooltip(true)}
+              onMouseLeave={() => setShowDateTooltip(false)}
+              style={{
+                fontSize: 28,
+                fontWeight: 700,
+                margin: 0,
+                cursor: "pointer",
+                userSelect: "none",
+                display: "inline",
+                position: "relative",
+              }}
+            >
+              {getSelectedFormattedDate()}{" "}
+              <span style={{ fontSize: 16, color: COLORS.dim }}>▼</span>
+              {selectedDateStr !== todayLocal && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setSelectedDate(new Date());
+                  }}
+                  style={{
+                    marginLeft: 10,
+                    padding: "4px 12px",
+                    borderRadius: 8,
+                    border: `1px solid ${COLORS.accent}`,
+                    background: "transparent",
+                    color: COLORS.accent,
+                    cursor: "pointer",
+                    fontWeight: 600,
+                    fontSize: 13,
+                    verticalAlign: "middle",
+                  }}
+                >
+                  Today
+                </button>
+              )}
+              {showDateTooltip && !showCalendar && (
+                <div
+                  style={{
+                    position: "absolute",
+                    top: "100%",
+                    left: 0,
+                    marginTop: 4,
+                    background: COLORS.inner,
+                    border: `1px solid ${COLORS.border}`,
+                    borderRadius: 8,
+                    padding: "6px 10px",
+                    fontSize: 13,
+                    fontWeight: 400,
+                    color: COLORS.dim,
+                    whiteSpace: "nowrap",
+                    zIndex: 10,
+                  }}
+                >
+                  Click to change date
+                </div>
+              )}
+            </h1>
           </div>
           {showCalendar && (
             <div
@@ -680,16 +700,38 @@ const isToday = selectedDateStr === todayLocal;
             >
               {/* ── Header row ── */}
               {(() => {
-                const savedHomeSession = activeSessions.find((s) => s._savedHome && !s._completed);
+                const savedHomeSession = activeSessions.find(
+                  (s) => s._savedHome && !s._completed,
+                );
                 if (savedHomeSession && isToday) {
                   return (
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        marginBottom: 12,
+                      }}
+                    >
                       <h2 style={{ fontSize: 20, fontWeight: 600, margin: 0 }}>
                         {selectedTemplate.name}
                       </h2>
                       <button
-                        onClick={() => onContinueWorkout(activeSessions.indexOf(savedHomeSession))}
-                        style={{ padding: "10px 24px", borderRadius: 8, border: "none", background: "#e8870e", color: COLORS.text, cursor: "pointer", fontWeight: 700, fontSize: 15 }}
+                        onClick={() =>
+                          onContinueWorkout(
+                            activeSessions.indexOf(savedHomeSession),
+                          )
+                        }
+                        style={{
+                          padding: "10px 24px",
+                          borderRadius: 8,
+                          border: "none",
+                          background: "#e8870e",
+                          color: COLORS.text,
+                          cursor: "pointer",
+                          fontWeight: 700,
+                          fontSize: 15,
+                        }}
                       >
                         Continue
                       </button>
@@ -698,49 +740,235 @@ const isToday = selectedDateStr === todayLocal;
                 }
                 return null;
               })()}
-              {!selectedCompleted && selectedTemplate.name !== "Rest" && !activeSessions.some((s) => s._savedHome && !s._completed) && (
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    marginBottom: 12,
-                  }}
-                >
+              {!selectedCompleted &&
+                selectedTemplate.name !== "Rest" &&
+                !activeSessions.some((s) => s._savedHome && !s._completed) && (
                   <div
                     style={{
                       display: "flex",
+                      justifyContent: "space-between",
                       alignItems: "center",
-                      gap: 8,
-                      position: "relative",
+                      marginBottom: 12,
                     }}
                   >
-                    {/* Only show template picker when NOT completed */}
-                    {!selectedCompleted &&
-                    !activeSessions.filter((s) => !s._completed && !s._editing)
-                      .length ? (
-                      <h2
-                        onClick={() => setShowWorkoutPicker(!showWorkoutPicker)}
-                        onMouseEnter={() => setShowWorkoutTooltip(true)}
-                        onMouseLeave={() => setShowWorkoutTooltip(false)}
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        position: "relative",
+                      }}
+                    >
+                      {/* Only show template picker when NOT completed */}
+                      {!selectedCompleted &&
+                      !activeSessions.filter(
+                        (s) => !s._completed && !s._editing,
+                      ).length ? (
+                        <h2
+                          onClick={() =>
+                            setShowWorkoutPicker(!showWorkoutPicker)
+                          }
+                          onMouseEnter={() => setShowWorkoutTooltip(true)}
+                          onMouseLeave={() => setShowWorkoutTooltip(false)}
+                          style={{
+                            fontSize: 20,
+                            fontWeight: 600,
+                            margin: 0,
+                            cursor: "pointer",
+                            userSelect: "none" as const,
+                          }}
+                        >
+                          {selectedTemplate.name}{" "}
+                          <span style={{ fontSize: 12, color: COLORS.dim }}>
+                            ▼
+                          </span>
+                          {showWorkoutTooltip && !showWorkoutPicker && (
+                            <div
+                              style={{
+                                position: "absolute",
+                                top: "100%",
+                                left: 0,
+                                marginTop: 4,
+                                background: COLORS.inner,
+                                border: `1px solid ${COLORS.border}`,
+                                borderRadius: 8,
+                                padding: "6px 10px",
+                                fontSize: 13,
+                                fontWeight: 400,
+                                color: COLORS.dim,
+                                whiteSpace: "nowrap",
+                                zIndex: 10,
+                              }}
+                            >
+                              Click to change template for today
+                            </div>
+                          )}
+                        </h2>
+                      ) : (
+                        <h2
+                          style={{ fontSize: 20, fontWeight: 600, margin: 0 }}
+                        >
+                          {selectedTemplate.name}
+                        </h2>
+                      )}
+
+                      {/* Revert only when not completed */}
+                      {hasOverride && !selectedCompleted && (
+                        <button
+                          onClick={() => {
+                            const u = { ...dayOverrides };
+                            delete u[selectedDateStr];
+                            setDayOverrides(u);
+                          }}
+                          style={{
+                            padding: "4px 10px",
+                            borderRadius: 6,
+                            border: "none",
+                            background: "#e8870e",
+                            color: "#fff",
+                            cursor: "pointer",
+                            fontWeight: 600,
+                            fontSize: 12,
+                          }}
+                        >
+                          Revert
+                        </button>
+                      )}
+
+                      {/* Template picker dropdown */}
+                      {showWorkoutPicker && !selectedCompleted && (
+                        <div
+                          onClick={(e) => e.stopPropagation()}
+                          style={{
+                            position: "absolute",
+                            top: "100%",
+                            left: 0,
+                            marginTop: 8,
+                            background: COLORS.card,
+                            border: `1px solid ${COLORS.border}`,
+                            borderRadius: 12,
+                            padding: 12,
+                            zIndex: 1000,
+                            minWidth: 200,
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: 4,
+                          }}
+                        >
+                          {templates.map((t) => {
+                            const isCurrent = t.id === effectiveTemplateId;
+                            return (
+                              <button
+                                key={t.id}
+                                onClick={() => {
+                                  if (t.id === effectiveTemplateId) {
+                                    setShowWorkoutPicker(false);
+                                    return;
+                                  }
+                                  if (
+                                    inProgressSession &&
+                                    inProgressSession.date === today
+                                  ) {
+                                    setPendingTemplateId(t.id);
+                                    setShowSessionWarning(true);
+                                    setShowWorkoutPicker(false);
+                                    return;
+                                  }
+                                  if (t.id === selectedTemplateId) {
+                                    const u = { ...dayOverrides };
+                                    delete u[selectedDateStr];
+                                    setDayOverrides(u);
+                                  } else {
+                                    setDayOverrides({
+                                      ...dayOverrides,
+                                      [selectedDateStr]: t.id,
+                                    });
+                                  }
+                                  setShowWorkoutPicker(false);
+                                }}
+                                style={{
+                                  padding: "8px 12px",
+                                  borderRadius: 8,
+                                  border: isCurrent
+                                    ? `2px solid ${COLORS.accent}`
+                                    : `1px solid ${COLORS.border}`,
+                                  background: isCurrent
+                                    ? COLORS.accent + "22"
+                                    : COLORS.inner,
+                                  color: isCurrent
+                                    ? COLORS.accent
+                                    : COLORS.text,
+                                  cursor: "pointer",
+                                  fontSize: 14,
+                                  fontWeight: isCurrent ? 600 : 400,
+                                  textAlign: "left" as const,
+                                }}
+                              >
+                                {t.name}
+                                {isCurrent && " ✓"}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Right-side button */}
+                    {inProgressSession && isToday ? (
+                      <button
+                        onClick={() =>
+                          onContinueWorkout(
+                            activeSessions.indexOf(inProgressSession),
+                          )
+                        }
                         style={{
-                          fontSize: 20,
-                          fontWeight: 600,
-                          margin: 0,
+                          padding: "10px 24px",
+                          borderRadius: 8,
+                          border: "none",
+                          background: "#e8870e",
+                          color: COLORS.text,
                           cursor: "pointer",
-                          userSelect: "none" as const,
+                          fontWeight: 700,
+                          fontSize: 15,
                         }}
                       >
-                        {selectedTemplate.name}{" "}
-                        <span style={{ fontSize: 12, color: COLORS.dim }}>
-                          ▼
-                        </span>
-                        {showWorkoutTooltip && !showWorkoutPicker && (
+                        Continue
+                      </button>
+                    ) : !selectedCompleted &&
+                      selectedTemplate.name !== "Rest" &&
+                      !activeSessions.some(
+                        (s) => s._savedHome && !s._completed,
+                      ) ? (
+                      <div style={{ position: "relative" }}>
+                        <button
+                          onClick={() =>
+                            onStartWorkout(
+                              selectedTemplate,
+                              undefined,
+                              selectedDateStr,
+                            )
+                          }
+                          onMouseEnter={() => setShowLogTooltip(true)}
+                          onMouseLeave={() => setShowLogTooltip(false)}
+                          style={{
+                            padding: "10px 24px",
+                            borderRadius: 8,
+                            border: "none",
+                            background: COLORS.accent,
+                            color: COLORS.text,
+                            cursor: "pointer",
+                            fontWeight: 700,
+                            fontSize: 15,
+                          }}
+                        >
+                          LOG
+                        </button>
+                        {showLogTooltip && (
                           <div
                             style={{
                               position: "absolute",
                               top: "100%",
-                              left: 0,
+                              right: 0,
                               marginTop: 4,
                               background: COLORS.inner,
                               border: `1px solid ${COLORS.border}`,
@@ -753,196 +981,66 @@ const isToday = selectedDateStr === todayLocal;
                               zIndex: 10,
                             }}
                           >
-                            Click to change template for today
+                            Click to log your workout
                           </div>
                         )}
-                      </h2>
-                    ) : (
-                      <h2 style={{ fontSize: 20, fontWeight: 600, margin: 0 }}>
-                        {selectedTemplate.name}
-                      </h2>
-                    )}
-
-                    {/* Revert only when not completed */}
-                    {hasOverride && !selectedCompleted && (
-                      <button
-                        onClick={() => {
-                          const u = { ...dayOverrides };
-                          delete u[selectedDateStr];
-                          setDayOverrides(u);
-                        }}
-                        style={{
-                          padding: "4px 10px",
-                          borderRadius: 6,
-                          border: "none",
-                          background: "#e8870e",
-                          color: "#fff",
-                          cursor: "pointer",
-                          fontWeight: 600,
-                          fontSize: 12,
-                        }}
-                      >
-                        Revert
-                      </button>
-                    )}
-
-                    {/* Template picker dropdown */}
-                    {showWorkoutPicker && !selectedCompleted && (
-                      <div
-                        onClick={(e) => e.stopPropagation()}
-                        style={{
-                          position: "absolute",
-                          top: "100%",
-                          left: 0,
-                          marginTop: 8,
-                          background: COLORS.card,
-                          border: `1px solid ${COLORS.border}`,
-                          borderRadius: 12,
-                          padding: 12,
-                          zIndex: 1000,
-                          minWidth: 200,
-                          display: "flex",
-                          flexDirection: "column",
-                          gap: 4,
-                        }}
-                      >
-                        {templates.map((t) => {
-                          const isCurrent = t.id === effectiveTemplateId;
-                          return (
-                            <button
-                              key={t.id}
-                              onClick={() => {
-                                if (t.id === effectiveTemplateId) {
-                                  setShowWorkoutPicker(false);
-                                  return;
-                                }
-                                if (
-                                  inProgressSession &&
-                                  inProgressSession.date === today
-                                ) {
-                                  setPendingTemplateId(t.id);
-                                  setShowSessionWarning(true);
-                                  setShowWorkoutPicker(false);
-                                  return;
-                                }
-                                if (t.id === selectedTemplateId) {
-                                  const u = { ...dayOverrides };
-                                  delete u[selectedDateStr];
-                                  setDayOverrides(u);
-                                } else {
-                                  setDayOverrides({
-                                    ...dayOverrides,
-                                    [selectedDateStr]: t.id,
-                                  });
-                                }
-                                setShowWorkoutPicker(false);
-                              }}
-                              style={{
-                                padding: "8px 12px",
-                                borderRadius: 8,
-                                border: isCurrent
-                                  ? `2px solid ${COLORS.accent}`
-                                  : `1px solid ${COLORS.border}`,
-                                background: isCurrent
-                                  ? COLORS.accent + "22"
-                                  : COLORS.inner,
-                                color: isCurrent ? COLORS.accent : COLORS.text,
-                                cursor: "pointer",
-                                fontSize: 14,
-                                fontWeight: isCurrent ? 600 : 400,
-                                textAlign: "left" as const,
-                              }}
-                            >
-                              {t.name}
-                              {isCurrent && " ✓"}
-                            </button>
-                          );
-                        })}
                       </div>
-                    )}
+                    ) : null}
                   </div>
-
-                  {/* Right-side button */}
-                  {inProgressSession && isToday ? (
-                    <button
-                      onClick={() =>
-                        onContinueWorkout(
-                          activeSessions.indexOf(inProgressSession),
-                        )
-                      }
-                      style={{
-                        padding: "10px 24px",
-                        borderRadius: 8,
-                        border: "none",
-                        background: "#e8870e",
-                        color: COLORS.text,
-                        cursor: "pointer",
-                        fontWeight: 700,
-                        fontSize: 15,
-                      }}
-                    >
-                      Continue
-                    </button>
-                  ) : !selectedCompleted && selectedTemplate.name !== "Rest" && !activeSessions.some((s) => s._savedHome && !s._completed) ? (
-                    <div style={{ position: "relative" }}>
-                      <button
-                        onClick={() => onStartWorkout(selectedTemplate, undefined, selectedDateStr)}
-                        onMouseEnter={() => setShowLogTooltip(true)}
-                        onMouseLeave={() => setShowLogTooltip(false)}
-                        style={{
-                          padding: "10px 24px",
-                          borderRadius: 8,
-                          border: "none",
-                          background: COLORS.accent,
-                          color: COLORS.text,
-                          cursor: "pointer",
-                          fontWeight: 700,
-                          fontSize: 15,
-                        }}
-                      >
-                        LOG
-                      </button>
-                      {showLogTooltip && (
-                        <div
-                          style={{
-                            position: "absolute",
-                            top: "100%",
-                            right: 0,
-                            marginTop: 4,
-                            background: COLORS.inner,
-                            border: `1px solid ${COLORS.border}`,
-                            borderRadius: 8,
-                            padding: "6px 10px",
-                            fontSize: 13,
-                            fontWeight: 400,
-                            color: COLORS.dim,
-                            whiteSpace: "nowrap",
-                            zIndex: 10,
-                          }}
-                        >
-                          Click to log your workout
-                        </div>
-                      )}
-                    </div>
-                  ) : null}
-                </div>
-              )}
+                )}
 
               {/* ── Body ── */}
               {selectedTemplate.name === "Rest" && !selectedCompleted ? (
                 <>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, position: "relative" }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      marginBottom: 12,
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        position: "relative",
+                      }}
+                    >
                       <h2
                         onClick={() => setShowWorkoutPicker(!showWorkoutPicker)}
-                        style={{ fontSize: 20, fontWeight: 600, margin: 0, cursor: "pointer", userSelect: "none" as const }}
+                        style={{
+                          fontSize: 20,
+                          fontWeight: 600,
+                          margin: 0,
+                          cursor: "pointer",
+                          userSelect: "none" as const,
+                        }}
                       >
-                        {selectedTemplate.name} <span style={{ fontSize: 12, color: COLORS.dim }}>▼</span>
+                        {selectedTemplate.name}{" "}
+                        <span style={{ fontSize: 12, color: COLORS.dim }}>
+                          ▼
+                        </span>
                       </h2>
                       {showWorkoutPicker && (
                         <div
                           onClick={(e) => e.stopPropagation()}
-                          style={{ position: "absolute", top: "100%", left: 0, marginTop: 8, background: COLORS.card, border: `1px solid ${COLORS.border}`, borderRadius: 12, padding: 12, zIndex: 1000, minWidth: 200, display: "flex", flexDirection: "column", gap: 4 }}
+                          style={{
+                            position: "absolute",
+                            top: "100%",
+                            left: 0,
+                            marginTop: 8,
+                            background: COLORS.card,
+                            border: `1px solid ${COLORS.border}`,
+                            borderRadius: 12,
+                            padding: 12,
+                            zIndex: 1000,
+                            minWidth: 200,
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: 4,
+                          }}
                         >
                           {templates.map((t) => {
                             const isCurrent = t.id === effectiveTemplateId;
@@ -951,15 +1049,37 @@ const isToday = selectedDateStr === todayLocal;
                                 key={t.id}
                                 onClick={() => {
                                   if (t.id === selectedTemplateId) {
-                                    const u = { ...dayOverrides }; delete u[selectedDateStr]; setDayOverrides(u);
+                                    const u = { ...dayOverrides };
+                                    delete u[selectedDateStr];
+                                    setDayOverrides(u);
                                   } else {
-                                    setDayOverrides({ ...dayOverrides, [selectedDateStr]: t.id });
+                                    setDayOverrides({
+                                      ...dayOverrides,
+                                      [selectedDateStr]: t.id,
+                                    });
                                   }
                                   setShowWorkoutPicker(false);
                                 }}
-                                style={{ padding: "8px 12px", borderRadius: 8, border: isCurrent ? `2px solid ${COLORS.accent}` : `1px solid ${COLORS.border}`, background: isCurrent ? COLORS.accent + "22" : COLORS.inner, color: isCurrent ? COLORS.accent : COLORS.text, cursor: "pointer", fontSize: 14, fontWeight: isCurrent ? 600 : 400, textAlign: "left" as const }}
+                                style={{
+                                  padding: "8px 12px",
+                                  borderRadius: 8,
+                                  border: isCurrent
+                                    ? `2px solid ${COLORS.accent}`
+                                    : `1px solid ${COLORS.border}`,
+                                  background: isCurrent
+                                    ? COLORS.accent + "22"
+                                    : COLORS.inner,
+                                  color: isCurrent
+                                    ? COLORS.accent
+                                    : COLORS.text,
+                                  cursor: "pointer",
+                                  fontSize: 14,
+                                  fontWeight: isCurrent ? 600 : 400,
+                                  textAlign: "left" as const,
+                                }}
                               >
-                                {t.name}{isCurrent && " ✓"}
+                                {t.name}
+                                {isCurrent && " ✓"}
                               </button>
                             );
                           })}
@@ -1046,276 +1166,269 @@ const isToday = selectedDateStr === todayLocal;
                     <div>
                       {/* Pending new session */}
                       {activeSessions
-                          .filter((s) => s._pending)
-                          .map((s) => {
-                            const pendingTemplate =
-                              templates.find((t) => t.id === s.templateId) ||
-                              selectedTemplate;
-                            return (
-                              <div key={s.id}>
-                                <div
-                                  style={{
-                                    display: "flex",
-                                    justifyContent: "space-between",
-                                    alignItems: "center",
-                                    paddingBottom: 10,
-                                  }}
-                                >
-                                  <div style={{ position: "relative" }}>
-                                    <h2
-                                      onClick={() =>
-                                        setShowWorkoutPicker(!showWorkoutPicker)
-                                      }
-                                      onMouseEnter={() =>
-                                        setShowWorkoutTooltip(true)
-                                      }
-                                      onMouseLeave={() =>
-                                        setShowWorkoutTooltip(false)
-                                      }
-                                      style={{
-                                        fontSize: 20,
-                                        fontWeight: 600,
-                                        margin: 0,
-                                        cursor: "pointer",
-                                        userSelect: "none" as const,
-                                      }}
-                                    >
-                                      {pendingTemplate.name}{" "}
-                                      <span
-                                        style={{
-                                          fontSize: 12,
-                                          color: COLORS.dim,
-                                        }}
-                                      >
-                                        ▼
-                                      </span>
-                                      
-                                    </h2>
-                                    {showWorkoutPicker && (
-                                      <div
-                                        onClick={(e) => e.stopPropagation()}
-                                        style={{
-                                          position: "absolute",
-                                          top: "100%",
-                                          left: 0,
-                                          marginTop: 8,
-                                          background: COLORS.card,
-                                          border: `1px solid ${COLORS.border}`,
-                                          borderRadius: 12,
-                                          padding: 12,
-                                          zIndex: 1000,
-                                          minWidth: 200,
-                                          display: "flex",
-                                          flexDirection: "column",
-                                          gap: 4,
-                                        }}
-                                      >
-                                        {templates.map((t) => {
-                                          const isCurrent =
-                                            t.id === s.templateId;
-                                          return (
-                                            <button
-                                              key={t.id}
-                                              onClick={() => {
-                                                onUpdatePendingSession(
-                                                  s.id,
-                                                  t.id,
-                                                );
-                                                setShowWorkoutPicker(false);
-                                              }}
-                                              style={{
-                                                padding: "8px 12px",
-                                                borderRadius: 8,
-                                                border: isCurrent
-                                                  ? `2px solid ${COLORS.accent}`
-                                                  : `1px solid ${COLORS.border}`,
-                                                background: isCurrent
-                                                  ? COLORS.accent + "22"
-                                                  : COLORS.inner,
-                                                color: isCurrent
-                                                  ? COLORS.accent
-                                                  : COLORS.text,
-                                                cursor: "pointer",
-                                                fontSize: 14,
-                                                fontWeight: isCurrent
-                                                  ? 600
-                                                  : 400,
-                                                textAlign: "left" as const,
-                                              }}
-                                            >
-                                              {t.name}
-                                              {isCurrent && " ✓"}
-                                            </button>
-                                          );
-                                        })}
-                                      </div>
-                                    )}
-                                    {false && (
-                                      <div
-                                        onClick={(e) => e.stopPropagation()}
-                                        style={{
-                                          position: "absolute",
-                                          top: "100%",
-                                          left: 0,
-                                          marginTop: 8,
-                                          background: COLORS.card,
-                                          border: `1px solid ${COLORS.border}`,
-                                          borderRadius: 12,
-                                          padding: 12,
-                                          zIndex: 1000,
-                                          minWidth: 200,
-                                          display: "flex",
-                                          flexDirection: "column",
-                                          gap: 4,
-                                        }}
-                                      >
-                                        {templates.map((t) => {
-                                          const isCurrent =
-                                            t.id === s.templateId;
-                                          return (
-                                            <button
-                                              key={t.id}
-                                              onClick={() => {
-                                                const updated =
-                                                  activeSessions.map((sess) =>
-                                                    sess.id === s.id
-                                                      ? {
-                                                          ...sess,
-                                                          templateId: t.id,
-                                                          name: t.name,
-                                                        }
-                                                      : sess,
-                                                  );
-                                                activeSessions;
-                                                setShowPendingPicker(false);
-                                              }}
-                                              style={{
-                                                padding: "8px 12px",
-                                                borderRadius: 8,
-                                                border: isCurrent
-                                                  ? `2px solid ${COLORS.accent}`
-                                                  : `1px solid ${COLORS.border}`,
-                                                background: isCurrent
-                                                  ? COLORS.accent + "22"
-                                                  : COLORS.inner,
-                                                color: isCurrent
-                                                  ? COLORS.accent
-                                                  : COLORS.text,
-                                                cursor: "pointer",
-                                                fontSize: 14,
-                                                fontWeight: isCurrent
-                                                  ? 600
-                                                  : 400,
-                                                textAlign: "left" as const,
-                                              }}
-                                            >
-                                              {t.name}
-                                              {isCurrent && " ✓"}
-                                            </button>
-                                          );
-                                        })}
-                                      </div>
-                                    )}
-                                  </div>
-                                  <div style={{ display: "flex", gap: 8 }}>
-                                    <button
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        onRemovePendingSession(s.id);
-                                      }}
-                                      style={{
-                                        padding: "10px 16px",
-                                        borderRadius: 8,
-                                        border: `1px solid ${COLORS.red}`,
-                                        background: "transparent",
-                                        color: COLORS.red,
-                                        cursor: "pointer",
-                                        fontWeight: 600,
-                                        fontSize: 15,
-                                      }}
-                                    >
-                                      Delete
-                                    </button>
-                                    <button
-                                      onClick={() =>
-                                        onContinueWorkout(
-                                          activeSessions.indexOf(s),
-                                        )
-                                      }
-                                      style={{
-                                        padding: "10px 24px",
-                                        borderRadius: 8,
-                                        border: "none",
-                                        background: COLORS.accent,
-                                        color: COLORS.text,
-                                        cursor: "pointer",
-                                        fontWeight: 700,
-                                        fontSize: 15,
-                                      }}
-                                    >
-                                      LOG
-                                    </button>
-                                  </div>
-                                </div>
-                                <div
-                                  style={{
-                                    display: "flex",
-                                    justifyContent: "space-between",
-                                    padding: "6px 0",
-                                    borderTop: `1px solid ${COLORS.border}`,
-                                    borderBottom: `1px solid ${COLORS.border}`,
-                                    marginBottom: 4,
-                                  }}
-                                >
-                                  <span
+                        .filter((s) => s._pending)
+                        .map((s) => {
+                          const pendingTemplate =
+                            templates.find((t) => t.id === s.templateId) ||
+                            selectedTemplate;
+                          return (
+                            <div key={s.id}>
+                              <div
+                                style={{
+                                  display: "flex",
+                                  justifyContent: "space-between",
+                                  alignItems: "center",
+                                  paddingBottom: 10,
+                                }}
+                              >
+                                <div style={{ position: "relative" }}>
+                                  <h2
+                                    onClick={() =>
+                                      setShowWorkoutPicker(!showWorkoutPicker)
+                                    }
+                                    onMouseEnter={() =>
+                                      setShowWorkoutTooltip(true)
+                                    }
+                                    onMouseLeave={() =>
+                                      setShowWorkoutTooltip(false)
+                                    }
                                     style={{
-                                      color: COLORS.dim,
-                                      fontSize: 12,
+                                      fontSize: 20,
                                       fontWeight: 600,
-                                      textTransform: "uppercase" as const,
+                                      margin: 0,
+                                      cursor: "pointer",
+                                      userSelect: "none" as const,
                                     }}
                                   >
-                                    Exercise
-                                  </span>
-                                  <span
-                                    style={{
-                                      color: COLORS.dim,
-                                      fontSize: 12,
-                                      fontWeight: 600,
-                                      textTransform: "uppercase" as const,
-                                    }}
-                                  >
-                                    Sets × Reps
-                                  </span>
-                                </div>
-                                {pendingTemplate.exercises.map(
-                                  (ex: any, ei: number) => (
+                                    {pendingTemplate.name}{" "}
+                                    <span
+                                      style={{
+                                        fontSize: 12,
+                                        color: COLORS.dim,
+                                      }}
+                                    >
+                                      ▼
+                                    </span>
+                                  </h2>
+                                  {showWorkoutPicker && (
                                     <div
-                                      key={ei}
+                                      onClick={(e) => e.stopPropagation()}
                                       style={{
+                                        position: "absolute",
+                                        top: "100%",
+                                        left: 0,
+                                        marginTop: 8,
+                                        background: COLORS.card,
+                                        border: `1px solid ${COLORS.border}`,
+                                        borderRadius: 12,
+                                        padding: 12,
+                                        zIndex: 1000,
+                                        minWidth: 200,
                                         display: "flex",
-                                        justifyContent: "space-between",
-                                        padding: "8px 0",
-                                        borderBottom: `1px solid ${COLORS.border}`,
-                                        fontSize: 14,
+                                        flexDirection: "column",
+                                        gap: 4,
                                       }}
                                     >
-                                      <span>{ex.name}</span>
-                                      <span style={{ color: COLORS.dim }}>
-                                        {ex.sets} × {ex.repRange || "8-12"}
-                                      </span>
+                                      {templates.map((t) => {
+                                        const isCurrent = t.id === s.templateId;
+                                        return (
+                                          <button
+                                            key={t.id}
+                                            onClick={() => {
+                                              onUpdatePendingSession(
+                                                s.id,
+                                                t.id,
+                                              );
+                                              setShowWorkoutPicker(false);
+                                            }}
+                                            style={{
+                                              padding: "8px 12px",
+                                              borderRadius: 8,
+                                              border: isCurrent
+                                                ? `2px solid ${COLORS.accent}`
+                                                : `1px solid ${COLORS.border}`,
+                                              background: isCurrent
+                                                ? COLORS.accent + "22"
+                                                : COLORS.inner,
+                                              color: isCurrent
+                                                ? COLORS.accent
+                                                : COLORS.text,
+                                              cursor: "pointer",
+                                              fontSize: 14,
+                                              fontWeight: isCurrent ? 600 : 400,
+                                              textAlign: "left" as const,
+                                            }}
+                                          >
+                                            {t.name}
+                                            {isCurrent && " ✓"}
+                                          </button>
+                                        );
+                                      })}
                                     </div>
-                                  ),
-                                )}
-                                <div
-                                  style={{
-                                    borderBottom: `1px solid ${COLORS.border}`,
-                                    margin: "12px 0",
-                                  }}
-                                />
+                                  )}
+                                  {false && (
+                                    <div
+                                      onClick={(e) => e.stopPropagation()}
+                                      style={{
+                                        position: "absolute",
+                                        top: "100%",
+                                        left: 0,
+                                        marginTop: 8,
+                                        background: COLORS.card,
+                                        border: `1px solid ${COLORS.border}`,
+                                        borderRadius: 12,
+                                        padding: 12,
+                                        zIndex: 1000,
+                                        minWidth: 200,
+                                        display: "flex",
+                                        flexDirection: "column",
+                                        gap: 4,
+                                      }}
+                                    >
+                                      {templates.map((t) => {
+                                        const isCurrent = t.id === s.templateId;
+                                        return (
+                                          <button
+                                            key={t.id}
+                                            onClick={() => {
+                                              const updated =
+                                                activeSessions.map((sess) =>
+                                                  sess.id === s.id
+                                                    ? {
+                                                        ...sess,
+                                                        templateId: t.id,
+                                                        name: t.name,
+                                                      }
+                                                    : sess,
+                                                );
+                                              activeSessions;
+                                              setShowPendingPicker(false);
+                                            }}
+                                            style={{
+                                              padding: "8px 12px",
+                                              borderRadius: 8,
+                                              border: isCurrent
+                                                ? `2px solid ${COLORS.accent}`
+                                                : `1px solid ${COLORS.border}`,
+                                              background: isCurrent
+                                                ? COLORS.accent + "22"
+                                                : COLORS.inner,
+                                              color: isCurrent
+                                                ? COLORS.accent
+                                                : COLORS.text,
+                                              cursor: "pointer",
+                                              fontSize: 14,
+                                              fontWeight: isCurrent ? 600 : 400,
+                                              textAlign: "left" as const,
+                                            }}
+                                          >
+                                            {t.name}
+                                            {isCurrent && " ✓"}
+                                          </button>
+                                        );
+                                      })}
+                                    </div>
+                                  )}
+                                </div>
+                                <div style={{ display: "flex", gap: 8 }}>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      onRemovePendingSession(s.id);
+                                    }}
+                                    style={{
+                                      padding: "10px 16px",
+                                      borderRadius: 8,
+                                      border: `1px solid ${COLORS.red}`,
+                                      background: "transparent",
+                                      color: COLORS.red,
+                                      cursor: "pointer",
+                                      fontWeight: 600,
+                                      fontSize: 15,
+                                    }}
+                                  >
+                                    Delete
+                                  </button>
+                                  <button
+                                    onClick={() =>
+                                      onContinueWorkout(
+                                        activeSessions.indexOf(s),
+                                      )
+                                    }
+                                    style={{
+                                      padding: "10px 24px",
+                                      borderRadius: 8,
+                                      border: "none",
+                                      background: COLORS.accent,
+                                      color: COLORS.text,
+                                      cursor: "pointer",
+                                      fontWeight: 700,
+                                      fontSize: 15,
+                                    }}
+                                  >
+                                    LOG
+                                  </button>
+                                </div>
                               </div>
-                            );
-                          })}
+                              <div
+                                style={{
+                                  display: "flex",
+                                  justifyContent: "space-between",
+                                  padding: "6px 0",
+                                  borderTop: `1px solid ${COLORS.border}`,
+                                  borderBottom: `1px solid ${COLORS.border}`,
+                                  marginBottom: 4,
+                                }}
+                              >
+                                <span
+                                  style={{
+                                    color: COLORS.dim,
+                                    fontSize: 12,
+                                    fontWeight: 600,
+                                    textTransform: "uppercase" as const,
+                                  }}
+                                >
+                                  Exercise
+                                </span>
+                                <span
+                                  style={{
+                                    color: COLORS.dim,
+                                    fontSize: 12,
+                                    fontWeight: 600,
+                                    textTransform: "uppercase" as const,
+                                  }}
+                                >
+                                  Sets × Reps
+                                </span>
+                              </div>
+                              {pendingTemplate.exercises.map(
+                                (ex: any, ei: number) => (
+                                  <div
+                                    key={ei}
+                                    style={{
+                                      display: "flex",
+                                      justifyContent: "space-between",
+                                      padding: "8px 0",
+                                      borderBottom: `1px solid ${COLORS.border}`,
+                                      fontSize: 14,
+                                    }}
+                                  >
+                                    <span>{ex.name}</span>
+                                    <span style={{ color: COLORS.dim }}>
+                                      {ex.sets} × {ex.repRange || "8-12"}
+                                    </span>
+                                  </div>
+                                ),
+                              )}
+                              <div
+                                style={{
+                                  borderBottom: `1px solid ${COLORS.border}`,
+                                  margin: "12px 0",
+                                }}
+                              />
+                            </div>
+                          );
+                        })}
                     </div>
                     <div
                       style={{
@@ -1467,7 +1580,9 @@ const isToday = selectedDateStr === todayLocal;
                     {/* Create New Session button */}
                     {canAddSession && (
                       <button
-                        onClick={() => onAddNewSession(selectedTemplate, selectedDateStr)}
+                        onClick={() =>
+                          onAddNewSession(selectedTemplate, selectedDateStr)
+                        }
                         style={{
                           width: "100%",
                           padding: "8px 0",
@@ -2148,21 +2263,67 @@ const isToday = selectedDateStr === todayLocal;
             </div>
 
             {/* Heatmap - bottom of right column */}
-            <div style={{ ...cardStyle, flexShrink: 0, padding: "20px 16px", marginTop: 12 }}>
-              <div style={{ fontSize: 18, color: COLORS.text, marginBottom: 12, fontWeight: 600 }}>
+            <div
+              style={{
+                ...cardStyle,
+                flexShrink: 0,
+                padding: "20px 16px",
+                marginTop: 12,
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 18,
+                  color: COLORS.text,
+                  marginBottom: 12,
+                  fontWeight: 600,
+                }}
+              >
                 {today.split("-")[0]} Activity
               </div>
               <div style={{ width: "100%" }}>
                 {(() => {
-                  const grid = getFullYearGrid();
-                  const totalWeeks = Math.ceil(grid.length / 7);
-                  const rows = Array.from({ length: 7 }, (_, row) =>
-                    Array.from({ length: totalWeeks }, (_, col) => grid[col * 7 + row] ?? null)
+                  const CELL = 11; // px per cell
+                  const GAP = 2; // px gap
+                  const fullGrid = getFullYearGrid();
+                  const totalWeeks = Math.ceil(fullGrid.length / 7);
+                  const allRows = Array.from({ length: 7 }, (_, row) =>
+                    Array.from(
+                      { length: totalWeeks },
+                      (_, col) => fullGrid[col * 7 + row] ?? null,
+                    ),
                   );
+
+                  // Calculate how many weeks fit in the container
+                  const labelWidth = 28;
+                  const containerWidth =
+                    (typeof window !== "undefined"
+                      ? window.innerWidth * 0.45
+                      : 400) -
+                    32 -
+                    labelWidth;
+                  const visibleWeeks = Math.floor(
+                    (containerWidth + GAP) / (CELL + GAP),
+                  );
+
+                  // Find which column today falls in
+                  const todayStr = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}-${String(new Date().getDate()).padStart(2, "0")}`;
+                  let todayCol = totalWeeks - 1;
+                  for (let col = 0; col < totalWeeks; col++) {
+                    for (let row = 0; row < 7; row++) {
+                      if (allRows[row][col]?.date === todayStr) { todayCol = col; break; }
+                    }
+                  }
+                  // Anchor window so today's column is the last visible column
+                  const colOffset = Math.max(0, todayCol - visibleWeeks + 1);
+                  const rows = allRows.map((row) =>
+                    row.slice(colOffset, colOffset + visibleWeeks),
+                  );
+                  const grid = fullGrid; // keep reference for monthCols calc
                   const DOW_LABELS = ["Sun", "", "Tue", "", "Thu", "", "Sat"];
                   const monthCols: { label: string; col: number }[] = [];
                   HEATMAP_MONTHS.forEach((m, mi) => {
-                    for (let col = 0; col < totalWeeks; col++) {
+                    for (let col = 0; col < visibleWeeks; col++) {
                       const cell = rows[0][col] || rows[1][col] || rows[2][col];
                       if (cell) {
                         const d = new Date(cell.date + "T12:00:00");
@@ -2176,11 +2337,26 @@ const isToday = selectedDateStr === todayLocal;
                   return (
                     <div style={{ width: "100%" }}>
                       {/* Month labels row */}
-                      <div style={{ display: "flex", marginLeft: 28, marginBottom: 3 }}>
-                        {Array.from({ length: totalWeeks }, (_, col) => {
-                          const month = monthCols.find(mc => mc.col === col);
+                      <div
+                        style={{
+                          display: "flex",
+                          marginLeft: 28,
+                          marginBottom: 3,
+                        }}
+                      >
+                        {Array.from({ length: visibleWeeks }, (_, col) => {
+                          const month = monthCols.find((mc) => mc.col === col);
                           return (
-                            <div key={col} style={{ flex: 1, fontSize: 9, color: COLORS.text, overflow: "visible", whiteSpace: "nowrap" }}>
+                            <div
+                              key={col}
+                              style={{
+                                flex: 1,
+                                fontSize: 9,
+                                color: COLORS.text,
+                                overflow: "visible",
+                                whiteSpace: "nowrap",
+                              }}
+                            >
                               {month ? month.label : ""}
                             </div>
                           );
@@ -2188,25 +2364,48 @@ const isToday = selectedDateStr === todayLocal;
                       </div>
                       {/* Day rows */}
                       {Array.from({ length: 7 }, (_, row) => (
-                        <div key={row} style={{ display: "flex", alignItems: "center", marginBottom: 2 }}>
-                          <div style={{ width: 24, fontSize: 9, color: COLORS.text, textAlign: "right", paddingRight: 4, flexShrink: 0 }}>
+                        <div
+                          key={row}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            marginBottom: 2,
+                          }}
+                        >
+                          <div
+                            style={{
+                              width: 24,
+                              fontSize: 9,
+                              color: COLORS.text,
+                              textAlign: "right",
+                              paddingRight: 4,
+                              flexShrink: 0,
+                            }}
+                          >
                             {DOW_LABELS[row]}
                           </div>
-                          {Array.from({ length: totalWeeks }, (_, col) => {
+                          {Array.from({ length: visibleWeeks }, (_, col) => {
                             const cell = rows[row][col];
                             const isEmpty = !cell;
-                            const color = cell?.gym ? getWorkoutColor(cell.date) : null;
+                            const color = cell?.gym
+                              ? getWorkoutColor(cell.date)
+                              : null;
                             return (
                               <div
                                 key={col}
                                 title={cell?.gym ? cell.date : ""}
                                 style={{
-                                  flex: 1,
-                                  aspectRatio: "1",
+                                  width: CELL,
+                                  height: CELL,
+                                  flexShrink: 0,
                                   borderRadius: 2,
-                                  background: isEmpty ? "transparent" : color || COLORS.inner,
-                                  border: isEmpty ? "none" : `1px solid ${COLORS.border}`,
-                                  marginRight: 2,
+                                  background: isEmpty
+                                    ? "transparent"
+                                    : color || COLORS.inner,
+                                  border: isEmpty
+                                    ? "none"
+                                    : `1px solid ${COLORS.border}`,
+                                  marginRight: GAP,
                                 }}
                               />
                             );
@@ -2216,16 +2415,36 @@ const isToday = selectedDateStr === todayLocal;
                     </div>
                   );
                 })()}
-                <div style={{ display: "flex", gap: 12, marginTop: 8, alignItems: "center" }}>
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 12,
+                    marginTop: 8,
+                    alignItems: "center",
+                  }}
+                >
                   {[
                     { color: "#162d4a", label: "Much worse" },
                     { color: "#1e3a5f", label: "Worse" },
                     { color: "#1d4ed8", label: "Better" },
                     { color: "#2563eb", label: "Much better" },
                   ].map(({ color, label }) => (
-                    <div key={label} style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                      <div style={{ width: 10, height: 10, borderRadius: 2, background: color, border: `1px solid ${COLORS.border}` }} />
-                      <span style={{ fontSize: 10, color: COLORS.dim }}>{label}</span>
+                    <div
+                      key={label}
+                      style={{ display: "flex", alignItems: "center", gap: 4 }}
+                    >
+                      <div
+                        style={{
+                          width: 10,
+                          height: 10,
+                          borderRadius: 2,
+                          background: color,
+                          border: `1px solid ${COLORS.border}`,
+                        }}
+                      />
+                      <span style={{ fontSize: 10, color: COLORS.dim }}>
+                        {label}
+                      </span>
                     </div>
                   ))}
                 </div>
