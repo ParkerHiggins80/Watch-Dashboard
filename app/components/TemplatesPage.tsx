@@ -213,31 +213,42 @@ const [pendingDeleteVariantId, setPendingDeleteVariantId] = useState<string | nu
       if (!uid) return;
       const snap = await getDoc(doc(db, "users", uid, "exerciseIndex", initial.id));
       if (snap.exists()) {
-          const points = snap.data().points || [];
-          const dateMap: Record<string, any> = {};
-          for (const p of points) {
-            const label = new Date(p.date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
-            if (!dateMap[p.date]) dateMap[p.date] = { label };
-            if (p.variantWeights) {
+        const points = snap.data().points || [];
+        const isMultivariant = snap.data().isMultivariant ?? false;
+        const dateMap: Record<string, any> = {};
+        for (const p of points) {
+          const label = new Date(p.date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
+          if (!dateMap[p.date]) dateMap[p.date] = { label };
+          if (isMultivariant) {
+            if (p.variants) {
+              // New structure
+              for (const [vName, vData] of Object.entries(p.variants as Record<string, any>)) {
+                const sets = vData?.sets ?? [];
+                const max = sets.length > 0 ? Math.max(...sets.map((s: any) => s.weight ?? 0)) : 0;
+                if (max > 0) dateMap[p.date][vName] = max;
+              }
+            } else if (p.variantWeights) {
+              // Legacy fallback
               for (const [vName, vMax] of Object.entries(p.variantWeights)) {
                 dateMap[p.date][vName] = vMax;
               }
-            } else {
-              const fallbackName = initial?.variants?.find(v => v.isDefault)?.name ?? initial?.variants?.[0]?.name ?? "Standard";
-              dateMap[p.date][fallbackName] = p.maxWeight;
             }
-          }
-          setChartData(Object.values(dateMap));
-          const vList = initial?.variants ?? [];
-          if (!vList.length || (vList.length === 1 && vList[0].name === "Standard")) {
-            setChartVariants([{ name: "Standard", color: VARIANT_COLORS[0] }]);
           } else {
-            setChartVariants(vList.map((v, i) => ({ name: v.name, color: VARIANT_COLORS[i % VARIANT_COLORS.length] })));
+            const fallbackName = initial?.variants?.find(v => v.isDefault)?.name ?? "Standard";
+            dateMap[p.date][fallbackName] = p.maxWeight;
           }
-        } else {
-          setChartData([]);
-          setChartVariants([]);
         }
+        setChartData(Object.values(dateMap));
+        const vList = initial?.variants ?? [];
+        if (!isMultivariant || !vList.length || (vList.length === 1 && vList[0].name === "Standard")) {
+          setChartVariants([{ name: "Standard", color: VARIANT_COLORS[0] }]);
+        } else {
+          setChartVariants(vList.map((v, i) => ({ name: v.name, color: VARIANT_COLORS[i % VARIANT_COLORS.length] })));
+        }
+      } else {
+        setChartData([]);
+        setChartVariants([]);
+      }
     } catch (e) {
       setChartData([]);
     }

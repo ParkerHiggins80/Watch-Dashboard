@@ -56,7 +56,9 @@ export default function App() {
   const isSaving = useRef(false);
   const saveTimeout = useRef<any>(null);
   const currentPageRef = useRef(currentPage);
-  useEffect(() => { currentPageRef.current = currentPage; }, [currentPage]);
+  useEffect(() => {
+    currentPageRef.current = currentPage;
+  }, [currentPage]);
   const [dayOverrides, setDayOverrides] = useState<Record<string, string>>({});
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [exercises, setExercises] = useState<any[]>([]);
@@ -118,7 +120,16 @@ export default function App() {
                   })),
                 );
                 setActiveSessionIndex(d.activeSessionIndex ?? 0);
-                if (validSessions.some((s: any) => !s._completed && !s._editing && !s._pending && !s._savedHome)) setCurrentPage("session");
+                if (
+                  validSessions.some(
+                    (s: any) =>
+                      !s._completed &&
+                      !s._editing &&
+                      !s._pending &&
+                      !s._savedHome,
+                  )
+                )
+                  setCurrentPage("session");
               }
             }
           }
@@ -154,18 +165,30 @@ export default function App() {
               await import("firebase/firestore");
             const metaRef = doc(db, "users", u.uid, "exerciseIndex", "_meta");
             const metaSnap = await getDocFn(metaRef);
-            if (!metaSnap.exists() || !metaSnap.data()?.backfilled || !metaSnap.data()?.backfilledV2 || !metaSnap.data()?.backfilledV3 || !metaSnap.data()?.backfilledV4 || !metaSnap.data()?.backfilledV5) {
-              // Load current exercises to get ids
+          if (!metaSnap.exists() || !metaSnap.data()?.backfilledV6) {
+              const { writeBatch: writeBatchFn } = await import("firebase/firestore");
+
+              // Load current exercises to get ids + variant info
               const userSnap = await getDoc(doc(db, "users", u.uid));
               const userExercises: any[] = userSnap.exists()
                 ? (userSnap.data()?.exercises ?? [])
                 : [];
 
-              // Build index from all history
-              const indexMap: Record<
-                string,
-                { exerciseId: string; exerciseName: string; points: any[] }
-              > = {};
+              // ── Step 1: Add isMultivariant to exercise definitions ──
+              const updatedExercises = userExercises.map((ex: any) => ({
+                ...ex,
+                isMultivariant: (ex.variants?.length ?? 0) > 1 ? true : undefined,
+              }));
+              // Strip undefined isMultivariant so standard exercises don't store the field
+              const cleanedExercises = updatedExercises.map((ex: any) => {
+                const { isMultivariant, ...rest } = ex;
+                return isMultivariant ? { ...rest, isMultivariant: true } : rest;
+              });
+              await setDocFn(doc(db, "users", u.uid), { exercises: cleanedExercises }, { merge: true });
+              console.log("V6 backfill: updated exercise definitions with isMultivariant");
+
+              // ── Step 2: Rebuild index with new structure ──
+              const indexMap: Record<string, { exerciseId: string; exerciseName: string; isMultivariant: boolean; points: any[] }> = {};
 
               for (const workout of sorted as any[]) {
                 for (const ex of (workout.exercises || []) as any[]) {
@@ -173,148 +196,80 @@ export default function App() {
                     ?? userExercises.find((e: any) => ex.exerciseId && e.id === ex.exerciseId);
                   if (!exDef?.id) continue;
 
+                  const isMultivariant = (exDef.variants?.length ?? 0) > 1;
+                  const workingSets = (ex.sets || []).filter(
+                    (s: any) => s.type !== "warmup" && s.weight > 0 && s.reps > 0,
+                  );
+                  if (workingSets.length === 0) continue;
+
                   if (!indexMap[exDef.id]) {
                     indexMap[exDef.id] = {
                       exerciseId: exDef.id,
                       exerciseName: ex.name,
+                      isMultivariant,
                       points: [],
                     };
                   }
 
-                  const workingSets = (ex.sets || []).filter(
-                    (s: any) =>
-                      s.type !== "warmup" && s.weight > 0 && s.reps > 0,
-                  );
-                  if (workingSets.length === 0) continue;
-
-                  // Remove any existing point for this date then add new one
+                  // Remove existing point for this date
                   indexMap[exDef.id].points = indexMap[exDef.id].points.filter(
                     (p: any) => p.date !== workout.date,
                   );
-                  const bfMax = Math.max(
-                    ...workingSets.map((s: any) => s.weight ?? 0),
-                  );
-                  const bfVariantWeights: Record<string, number> = {};
-                  if ((exDef.variants ?? []).length > 1) {
-                    const defVariant =
-                      exDef.variants.find((v: any) => v.isDefault)?.name ??
-                      "Standard";
-                    for (const v of exDef.variants) {
-                      const vSets = workingSets.filter(
-                        (s: any) =>
-                          (s.variantName ?? defVariant) === v.name &&
-                          s.weight > 0,
-                      );
-                      if (vSets.length > 0)
-                        bfVariantWeights[v.name] = Math.max(
-                          ...vSets.map((s: any) => s.weight),
-                        );
+
+                  let newPoint: any;
+                  if (isMultivariant) {
+                    // Group sets by variantName
+                    const defVariant = exDef.variants.find((v: any) => v.isDefault)?.name ?? exDef.variants[0]?.name ?? "Standard";
+                    const variantMap: Record<string, { sets: any[] }> = {};
+                    for (const s of workingSets) {
+                      const vName = s.variantName ?? ex.variantName ?? defVariant;
+                      if (!variantMap[vName]) variantMap[vName] = { sets: [] };
+                      variantMap[vName].sets.push({
+                        weight: s.weight,
+                        reps: s.reps,
+                        type: s.type ?? "normal",
+                      });
                     }
-                    // If no variant tags found, attribute all sets to the exercise-level variantName
-                    if (Object.keys(bfVariantWeights).length === 0 && ex.variantName) {
-                      const maxW = Math.max(...workingSets.map((s: any) => s.weight ?? 0));
-                      if (maxW > 0) bfVariantWeights[ex.variantName] = maxW;
-                    }
+                    newPoint = { date: workout.date, variants: variantMap };
+                  } else {
+                    // Standard — flat sets, maxWeight
+                    newPoint = {
+                      date: workout.date,
+                      maxWeight: Math.max(...workingSets.map((s: any) => s.weight ?? 0)),
+                      sets: workingSets.map((s: any) => ({
+                        weight: s.weight,
+                        reps: s.reps,
+                        type: s.type ?? "normal",
+                      })),
+                    };
                   }
-                  const bfPoint: any = {
-                    date: workout.date,
-                    maxWeight: bfMax,
-                    variannt: ex.variantName ?? "Standard",
-                    sets: workingSets.map((s: any) => ({
-                      weight: s.weight,
-                      reps: s.reps,
-                      type: s.type ?? "normal",
-                    })),
-                  };
-                  if (Object.keys(bfVariantWeights).length > 0)
-                    bfPoint.variantWeights = bfVariantWeights;
-                  indexMap[exDef.id].points.push(bfPoint);
+                  indexMap[exDef.id].points.push(newPoint);
                 }
               }
 
-              // Write all index documents
-              const { writeBatch: writeBatchFn } = await import("firebase/firestore");
+              // Write rebuilt index documents
               const bfBatch = writeBatchFn(db);
               for (const [, indexDoc] of Object.entries(indexMap)) {
-                indexDoc.points.sort((a: any, b: any) =>
-                  a.date.localeCompare(b.date),
-                );
+                indexDoc.points.sort((a: any, b: any) => a.date.localeCompare(b.date));
                 bfBatch.set(
                   doc(db, "users", u.uid, "exerciseIndex", indexDoc.exerciseId),
                   indexDoc,
                 );
               }
               await bfBatch.commit();
+              console.log(`V6 backfill: rebuilt index for ${Object.keys(indexMap).length} exercise(s)`);
 
-              // ── Backfill V3: re-tag merged workout history ──
-              try {
-                const { collection: col3, getDocs: getDocs3, writeBatch: wb3, doc: doc3 } = await import("firebase/firestore");
-                const allWorkoutsSnap = await getDocs3(col3(db, "users", u.uid, "workouts"));
-                const mergeBatch = wb3(db);
-                let mergeCount = 0;
-                for (const wDoc of allWorkoutsSnap.docs) {
-                  const w = wDoc.data();
-                  const needsUpdate = (w.exercises || []).some(
-                    (ex: any) => ex.name === "Dumbbell Bench PressTEST" || ex.exerciseId === "mmqottxqsvvdtpx"
-                  );
-                  if (!needsUpdate) continue;
-                  const updatedExs = (w.exercises || []).map((ex: any) => {
-                    if (ex.name !== "Dumbbell Bench PressTEST" && ex.exerciseId !== "mmqottxqsvvdtpx") return ex;
-                    return {
-                      ...ex,
-                      name: "Bench PressTEST",
-                      exerciseId: "mmmn4koj30leqg7",
-                      sets: (ex.sets || []).map((s: any) => ({ ...s, variantName: "Dumbbell" })),
-                    };
-                  });
-                  mergeBatch.set(doc3(db, "users", u.uid, "workouts", wDoc.id), { ...w, exercises: updatedExs });
-                  mergeCount++;
-                }
-                if (mergeCount > 0) {
-                  await mergeBatch.commit();
-                  // Force V2 index rebuild on next load by clearing backfilledV2
-                  await setDocFn(metaRef, {
-                    backfilled: true,
-                    backfilledV2: false,
-                    backfilledV3: true,
-                    backfilledAt: Date.now(),
-                  });
-                }
-                console.log(`Merge backfill: re-tagged ${mergeCount} workout(s)`);
-              } catch (err) {
-                console.error("Merge backfill error:", err);
-              }
-
-              // ── Backfill V5: strip _templates, _exercises, _workoutGroups from workout docs ──
-              try {
-                const { collection: col5, getDocs: getDocs5, writeBatch: wb5, doc: doc5 } = await import("firebase/firestore");
-                const allWorkoutsSnap5 = await getDocs5(col5(db, "users", u.uid, "workouts"));
-                const debloatBatch = wb5(db);
-                let debloatCount = 0;
-                for (const wDoc of allWorkoutsSnap5.docs) {
-                  const w = wDoc.data();
-                  if (!w._templates && !w._exercises && !w._workoutGroups) continue;
-                  const { _templates: _t, _exercises: _e, _workoutGroups: _wg, ...clean } = w;
-                  debloatBatch.set(doc5(db, "users", u.uid, "workouts", wDoc.id), clean);
-                  debloatCount++;
-                  if (debloatCount >= 400) break;
-                }
-                if (debloatCount > 0) await debloatBatch.commit();
-                console.log(`Debloat backfill: cleaned ${debloatCount} workout(s)`);
-              } catch (err) {
-                console.error("Debloat backfill error:", err);
-              }
-
-              // Mark backfill complete
+              // Mark complete
               await setDocFn(metaRef, {
                 backfilled: true,
                 backfilledV2: true,
                 backfilledV3: true,
                 backfilledV4: true,
                 backfilledV5: true,
+                backfilledV6: true,
                 backfilledAt: Date.now(),
               });
-              console.log("Exercise index backfill complete");
+              console.log("V6 backfill complete");
             }
           } catch (err) {
             console.error("Backfill error:", err);
@@ -333,7 +288,12 @@ export default function App() {
 
   // Save data to Firestore on changes
   useEffect(() => {
-    console.log("[SAVE EFFECT] triggered, page:", currentPage, "saveEnabled:", saveEnabled);
+    console.log(
+      "[SAVE EFFECT] triggered, page:",
+      currentPage,
+      "saveEnabled:",
+      saveEnabled,
+    );
     if (!user || !saveEnabled) return;
     console.log("[SAVE EFFECT] ref page:", currentPageRef.current);
     if (currentPageRef.current === "session") {
@@ -546,17 +506,20 @@ export default function App() {
       _exercises: exercises,
       _workoutGroups: workoutGroups,
       exercises: template.exercises.map((ex: any) => {
-        const exDef = exercises.find((e: any) => e.name === ex.name)
-          ?? exercises.find((e: any) => ex.exerciseId && e.id === ex.exerciseId);
+        const exDef =
+          exercises.find((e: any) => e.name === ex.name) ??
+          exercises.find((e: any) => ex.exerciseId && e.id === ex.exerciseId);
         const defVariant = exDef?.variants?.find((v: any) => v.isDefault);
+        const vName = defVariant?.name ?? null;
         return {
           name: ex.name,
           exerciseId: exDef?.id ?? null,
-          variantName: defVariant?.name ?? null,
+          variantName: vName,
           sets: Array.from({ length: ex.sets }, () => ({
             weight: 0,
             reps: 0,
             type: "normal",
+            variantName: vName,
           })),
         };
       }),
@@ -618,53 +581,24 @@ export default function App() {
       : [...history, workout];
     setHistory(newHistory.sort((a, b) => a.date.localeCompare(b.date)));
     if (user) {
-      setDoc(doc(db, "users", user.uid, "workouts", workout.id), workout).catch(() => {});
+      setDoc(doc(db, "users", user.uid, "workouts", workout.id), workout).catch(
+        () => {},
+      );
 
       // ── Write exercise index ──
       try {
-        const { getDoc: getDocFn, setDoc: setDocFn, writeBatch } =
+        const { getDoc: getDocFn, writeBatch } =
           await import("firebase/firestore");
         const batch = writeBatch(db);
 
         for (const ex of cleanExercises) {
           if (!ex.exerciseId) continue;
           const exDef = exercises.find((e: any) => e.id === ex.exerciseId);
-          const defaultVariant =
-            exDef?.variants?.find((v: any) => v.isDefault)?.name ?? "Standard";
-
-          const workingSets = ex.sets.filter((s: any) => s.type !== "warmup");
-          const maxWeight =
-            workingSets.length > 0
-              ? Math.max(...workingSets.map((s: any) => s.weight ?? 0))
-              : 0;
-
-          // Build variantWeights map if this exercise has variants
-          const variantWeights: Record<string, number> = {};
-          if (exDef?.variants?.length > 1) {
-            for (const v of exDef.variants) {
-              const vSets = workingSets.filter(
-                (s: any) =>
-                  (s.variantName ?? defaultVariant) === v.name && s.weight > 0,
-              );
-              if (vSets.length > 0)
-                variantWeights[v.name] = Math.max(
-                  ...vSets.map((s: any) => s.weight),
-                );
-            }
-          }
-
-          const newPoint: any = {
-            date: workout.date,
-            maxWeight,
-            variant: ex.variantName ?? defaultVariant,
-            sets: workingSets.map((s: any) => ({
-              weight: s.weight ?? 0,
-              reps: s.reps ?? 0,
-              type: s.type ?? "normal",
-            })),
-          };
-          if (Object.keys(variantWeights).length > 0)
-            newPoint.variantWeights = variantWeights;
+          const isMultivariant = (exDef?.variants?.length ?? 0) > 1;
+          const workingSets = ex.sets.filter(
+            (s: any) => s.type !== "warmup" && s.weight > 0 && s.reps > 0,
+          );
+          if (workingSets.length === 0) continue;
 
           const idxRef = doc(
             db,
@@ -674,26 +608,49 @@ export default function App() {
             ex.exerciseId,
           );
           const idxSnap = await getDocFn(idxRef);
+          const existingPoints = idxSnap.exists()
+            ? (idxSnap.data().points ?? []).filter(
+                (p: any) => p.date !== workout.date,
+              )
+            : [];
 
-          if (idxSnap.exists()) {
-            const existing = idxSnap.data();
-            const points = (existing.points ?? []).filter(
-              (p: any) => p.date !== workout.date,
-            );
-            batch.set(idxRef, {
-              exerciseId: ex.exerciseId,
-              exerciseName: ex.name,
-              points: [...points, newPoint].sort((a: any, b: any) =>
-                a.date.localeCompare(b.date),
-              ),
-            });
+          let newPoint: any;
+          if (isMultivariant) {
+            // Group sets by variantName
+            const variantMap: Record<string, { sets: any[] }> = {};
+            for (const s of workingSets) {
+              const vName = s.variantName ?? ex.variantName ?? "Standard";
+              if (!variantMap[vName]) variantMap[vName] = { sets: [] };
+              variantMap[vName].sets.push({
+                weight: s.weight ?? 0,
+                reps: s.reps ?? 0,
+                type: s.type ?? "normal",
+              });
+            }
+            newPoint = { date: workout.date, variants: variantMap };
           } else {
-            batch.set(idxRef, {
-              exerciseId: ex.exerciseId,
-              exerciseName: ex.name,
-              points: [newPoint],
-            });
+            // Standard — flat sets, no variant fields
+            newPoint = {
+              date: workout.date,
+              maxWeight: Math.max(
+                ...workingSets.map((s: any) => s.weight ?? 0),
+              ),
+              sets: workingSets.map((s: any) => ({
+                weight: s.weight ?? 0,
+                reps: s.reps ?? 0,
+                type: s.type ?? "normal",
+              })),
+            };
           }
+
+          batch.set(idxRef, {
+            exerciseId: ex.exerciseId,
+            exerciseName: ex.name,
+            isMultivariant,
+            points: [...existingPoints, newPoint].sort((a: any, b: any) =>
+              a.date.localeCompare(b.date),
+            ),
+          });
         }
         await batch.commit();
       } catch (err) {
@@ -713,7 +670,9 @@ export default function App() {
   const saveAndReturnHome = (sessionDate?: string) => {
     if (sessionDate) setSelectedDate(new Date(sessionDate + "T12:00:00"));
     const updated = activeSessions.map((s, i) =>
-      i === activeSessionIndex ? { ...s, _pending: false, _savedHome: true } : s,
+      i === activeSessionIndex
+        ? { ...s, _pending: false, _savedHome: true }
+        : s,
     );
     setActiveSessions(updated);
     // Force immediate save to Firestore with _pending: true
@@ -741,7 +700,11 @@ export default function App() {
           })),
         })),
       }));
-      setDoc(doc(db, "users", user.uid), { activeSessions: cleanSessions }, { merge: true }).catch(() => {});
+      setDoc(
+        doc(db, "users", user.uid),
+        { activeSessions: cleanSessions },
+        { merge: true },
+      ).catch(() => {});
     }
     setCurrentPage("home");
   };
@@ -784,7 +747,10 @@ export default function App() {
         );
         setHistory(newHistory);
         if (user)
-          setDoc(doc(db, "users", user.uid, "workouts", workout.id), workout).catch(() => {});
+          setDoc(
+            doc(db, "users", user.uid, "workouts", workout.id),
+            workout,
+          ).catch(() => {});
       }
     }
     setActiveSessions([]);
@@ -826,7 +792,11 @@ export default function App() {
       currentExerciseIndex: s.currentExerciseIndex ?? 0,
       currentSetIndex: s.currentSetIndex ?? 0,
     }));
-    setDoc(doc(db, "users", user.uid), { activeSessions: cleanSessions, activeSessionIndex }, { merge: true }).catch(() => {});
+    setDoc(
+      doc(db, "users", user.uid),
+      { activeSessions: cleanSessions, activeSessionIndex },
+      { merge: true },
+    ).catch(() => {});
   };
 
   const cancelWorkout = () => {
@@ -850,11 +820,21 @@ export default function App() {
       activeSessions.length > 0 ? activeSessions[safeIndex] : null;
     if (currentPage === "session") {
       if (!currentSession?.exercises) {
-        if (!dataLoaded) return (
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", color: COLORS.dim, fontSize: 16 }}>
-            Loading...
-          </div>
-        );
+        if (!dataLoaded)
+          return (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                height: "100vh",
+                color: COLORS.dim,
+                fontSize: 16,
+              }}
+            >
+              Loading...
+            </div>
+          );
         setCurrentPage("home");
         return null;
       }

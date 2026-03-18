@@ -215,50 +215,47 @@ const [mobileBottomTab, setMobileBottomTab] = useState<"previous" | "alltime">("
       });
       return next;
     });
+    // Tag all existing sets with the new variantName
+    const vName = activeVariant?.name ?? null;
+    const updatedExercises = session.exercises.map((ex: any, ei: number) =>
+      ei !== safeExIdx ? ex : {
+        ...ex,
+        variantName: vName,
+        sets: ex.sets.map((s: any) => ({ ...s, variantName: vName })),
+      }
+    );
+    setSession({ ...session, exercises: updatedExercises });
   }, [activeVariantName]);
   const previousWorkout = useMemo(() => {
-    
     if (indexData.length === 0) return null;
-    // Walk index points newest-first
     const isMultiVariant = variantList.length > 1;
     const sorted = [...indexData].sort((a: any, b: any) => b.date.localeCompare(a.date));
     for (const point of sorted) {
-      if (isMultiVariant && activeVariantName && activeVariantName !== "Standard") {
-        // Use variantWeights to confirm data exists for this variant
-        // Fall back to checking if this is the default variant and point has maxWeight
-        const defaultVariantName = variantList.find((v: any) => v.isDefault)?.name;
-        const hasVariantData = (point.variantWeights && activeVariantName in point.variantWeights) ||
-          (!point.variantWeights && point.sets?.length > 0);
-        if (!hasVariantData) continue;
-        // Pull actual sets from history for this date, filtered by variant
-        const workout = history.find((w: any) => w.date === point.date);
-        if (!workout) continue;
-        const baseName = getBaseName(safeExIdx);
-        const found = workout.exercises.find((e: any) => e.name === baseName || e.name === exerciseName || (activeVariantName && e.name === `${activeVariantName} ${baseName}`));
-        if (!found) {
-          // Exercise not in that history workout — use index point sets as fallback
-          if (point.sets?.length) return { date: point.date, sets: point.sets };
-          continue;
+      if (isMultiVariant) {
+        // New structure: point.variants is a map of variantName -> { sets }
+        if (point.variants) {
+          const vName = activeVariantName ?? variantList.find((v: any) => v.isDefault)?.name ?? variantList[0]?.name;
+          const variantData = point.variants[vName];
+          if (!variantData?.sets?.length) continue;
+          return { date: point.date, sets: variantData.sets };
         }
-        const strictSets = found.sets.filter((s: any) => s.type !== "warmup" && s.variantName === activeVariantName);
-        const looseSets = found.sets.filter((s: any) => s.type !== "warmup");
-        const sets = strictSets.length > 0 ? strictSets : looseSets;
-        if (sets.length === 0) {
-          return { date: point.date, sets: point.sets ?? [] };
-        }
-        return { date: point.date, sets };
-      } else {
-        // Try to get sets from history first for accuracy
-        if (!point.sets?.length) continue;
-        const workout = history.find((w: any) => w.date === point.date);
-        if (workout) {
+        // Legacy fallback: old variantWeights structure
+        if (point.variantWeights && activeVariantName && activeVariantName in point.variantWeights) {
+          const workout = history.find((w: any) => w.date === point.date);
+          if (!workout) continue;
           const baseName = getBaseName(safeExIdx);
           const found = workout.exercises.find((e: any) => e.name === baseName || e.name === exerciseName);
-          if (found) {
-            const sets = found.sets.filter((s: any) => s.type !== "warmup");
-            if (sets.length > 0) return { date: point.date, sets };
-          }
+          if (!found) continue;
+          const strictSets = found.sets.filter((s: any) => s.type !== "warmup" && s.variantName === activeVariantName);
+          const looseSets = found.sets.filter((s: any) => s.type !== "warmup");
+          const sets = strictSets.length > 0 ? strictSets : looseSets;
+          if (sets.length === 0) continue;
+          return { date: point.date, sets };
         }
+        continue;
+      } else {
+        // Standard: flat sets on the point
+        if (!point.sets?.length) continue;
         return { date: point.date, sets: point.sets };
       }
     }
@@ -291,27 +288,34 @@ const [mobileBottomTab, setMobileBottomTab] = useState<"previous" | "alltime">("
   const { chartData, chartVariants } = useMemo(() => {
     const def = getExerciseDef(exercise.name);
     const variants: any[] = def?.variants ?? [];
+    const isMultiVariant = variants.length > 1;
 
-    if (!variants.length || (variants.length === 1 && variants[0].name === "Standard")) {
+    if (!isMultiVariant) {
+      // Standard: flat maxWeight per point
       const points = indexData.map((p: any) => {
-        const d = new Date(p.date + "T12:00:00");
-        return { date: p.date, label: d.toLocaleDateString("en-US", { month: "short", day: "numeric" }), Standard: p.maxWeight };
+        const label = new Date(p.date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
+        return { date: p.date, label, Standard: p.maxWeight };
       });
       return { chartData: points, chartVariants: [{ name: "Standard", color: VARIANT_CHART_COLORS[0] }] };
     }
 
-    // Multi-variant: each index point may have a variantWeights map
+    // Multivariant: build one value per variant per date
     const dateMap: Record<string, any> = {};
     for (const p of indexData) {
-      const d = new Date(p.date + "T12:00:00");
-      const label = d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+      const label = new Date(p.date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
       if (!dateMap[p.date]) dateMap[p.date] = { date: p.date, label };
-      if (p.variantWeights) {
+      if (p.variants) {
+        // New structure
+        for (const [vName, vData] of Object.entries(p.variants as Record<string, any>)) {
+          const sets = vData?.sets ?? [];
+          const max = sets.length > 0 ? Math.max(...sets.map((s: any) => s.weight ?? 0)) : 0;
+          if (max > 0) dateMap[p.date][vName] = max;
+        }
+      } else if (p.variantWeights) {
+        // Legacy fallback
         for (const [vName, vMax] of Object.entries(p.variantWeights)) {
           dateMap[p.date][vName] = vMax;
         }
-      } else {
-        dateMap[p.date]["Standard"] = p.maxWeight;
       }
     }
     return {
@@ -394,7 +398,7 @@ const [mobileBottomTab, setMobileBottomTab] = useState<"previous" | "alltime">("
       ...updated.exercises[currentExerciseIndex],
       sets: [
         ...exercise.sets,
-        { weight: lastSet.weight, reps: lastSet.reps, type: "normal" },
+        { weight: lastSet.weight, reps: lastSet.reps, type: "normal", variantName: activeVariant?.name ?? null },
       ],
     };
     setSession(updated);
@@ -1211,7 +1215,15 @@ const [mobileBottomTab, setMobileBottomTab] = useState<"previous" | "alltime">("
               return;
             }
             const updated = { ...session };
-            updated.exercises = [...updated.exercises, { name, sets: [{ weight: 0, reps: 0, type: "normal" }] }];
+            const exDef = (session._exercises || []).find((e: any) => e.name === name);
+const defVariant = exDef?.variants?.find((v: any) => v.isDefault) ?? exDef?.variants?.[0];
+const vName = defVariant?.name ?? null;
+updated.exercises = [...updated.exercises, {
+  name,
+  exerciseId: exDef?.id ?? null,
+  variantName: vName,
+  sets: [{ weight: 0, reps: 0, type: "normal", variantName: vName }],
+}];
             setSession(updated);
             setCurrentExerciseIndex(updated.exercises.length - 1);
             setShowMobileAddModal(false);
@@ -1743,7 +1755,15 @@ const [mobileBottomTab, setMobileBottomTab] = useState<"previous" | "alltime">("
                     return;
                   }
                   const updated = { ...session };
-                  updated.exercises = [...updated.exercises, { name, sets: [{ weight: 0, reps: 0, type: "normal" }] }];
+                  const exDef = (session._exercises || []).find((e: any) => e.name === name);
+const defVariant = exDef?.variants?.find((v: any) => v.isDefault) ?? exDef?.variants?.[0];
+const vName = defVariant?.name ?? null;
+updated.exercises = [...updated.exercises, {
+  name,
+  exerciseId: exDef?.id ?? null,
+  variantName: vName,
+  sets: [{ weight: 0, reps: 0, type: "normal", variantName: vName }],
+}];
                   setSession(updated);
                   setCurrentExerciseIndex(updated.exercises.length - 1);
                   setShowAddDropdown(false);
