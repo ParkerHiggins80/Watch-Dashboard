@@ -100,7 +100,6 @@ export const DEFAULT_TASKS: string[] = [
   "",
   "",
   "",
-  "",
 ];
 
 // ============ EXERCISE LIBRARY ============

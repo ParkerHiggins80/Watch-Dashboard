@@ -29,39 +29,7 @@ export default function Navbar({ currentPage, onNavigate }: NavbarProps) {
 
   if (currentPage === "session") return null;
 
-  if (isMobile) {
-    return (
-      <div
-        style={{
-          display: "flex",
-          gap: 8,
-          padding: "12px 16px",
-          overflowX: "auto",
-        }}
-      >
-        {[...mainTabs, profileTab].map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => onNavigate(tab.id)}
-            style={{
-              padding: "10px 18px",
-              borderRadius: 8,
-              border: "none",
-              background: currentPage === tab.id ? COLORS.accent : COLORS.card,
-              color: currentPage === tab.id ? COLORS.text : COLORS.dim,
-              cursor: "pointer",
-              fontWeight: 600,
-              fontSize: 14,
-              whiteSpace: "nowrap",
-              transition: "all 0.2s",
-            }}
-          >
-            {tab.emoji} {tab.label}
-          </button>
-        ))}
-      </div>
-    );
-  }
+  
 
   return (
     <div

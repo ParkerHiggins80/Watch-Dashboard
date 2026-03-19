@@ -772,7 +772,15 @@ export default function ProfilePage({ history, templates, schedule, profileData,
 
         {/* Activity */}
         {card(<>
-          {sectionTitle(`${new Date().getFullYear()} Activity`)}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+            <div style={{ fontSize: 20, fontWeight: 700, color: COLORS.text }}>{new Date().getFullYear()} Activity</div>
+            <button
+              onClick={() => { import("firebase/auth").then(({ signOut }) => signOut(auth)); }}
+              style={{ padding: "6px 14px", borderRadius: 8, border: `1px solid ${COLORS.border}`, background: "transparent", color: COLORS.dim, cursor: "pointer", fontSize: 12, fontWeight: 600 }}
+            >
+              Sign out
+            </button>
+          </div>
           <ActivityGrid history={history} templates={templates} />
         </>)}
 

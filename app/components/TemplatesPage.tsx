@@ -1987,7 +1987,7 @@ const [pendingDeleteGroupId, setPendingDeleteGroupId] = useState<string | null>(
             <p style={{ color: COLORS.dim, fontSize: 11, margin: "4px 0 0" }}>Appear every day on home screen</p>
           </div>
           <div style={{ padding: "10px 12px", display: "grid", gridTemplateColumns: "1fr", gap: 8 }}>
-            {tasks.map((task, i) => (
+            {tasks.slice(0, 7).map((task, i) => (
               <div key={i} style={{ display: "flex", alignItems: "center", gap: 6 }}>
                 <span style={{ color: COLORS.dim, fontSize: 13, minWidth: 18 }}>{i + 1}.</span>
                 <input style={inp({ padding: "6px 8px", fontSize: 13 })} placeholder={`Task ${i + 1}…`} value={task} onChange={e => { const u = [...tasks]; u[i] = e.target.value; setTasks(u); }} />
@@ -2357,7 +2357,7 @@ const [pendingDeleteGroupId, setPendingDeleteGroupId] = useState<string | null>(
           <p style={{ color: COLORS.dim, fontSize: 11, margin: "4px 0 0" }}>Appear every day on home screen</p>
         </div>
         <div style={{ padding: "10px 12px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-          {tasks.map((task, i) => (
+          {tasks.slice(0, 7).map((task, i) => (
             <div key={i} style={{ display: "flex", alignItems: "center", gap: 6 }}>
               <span style={{ color: COLORS.dim, fontSize: 13, minWidth: 18 }}>{i + 1}.</span>
               <input

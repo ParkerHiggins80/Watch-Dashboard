@@ -33,6 +33,7 @@ interface HomePageProps {
   onFinishAndSwitch: (templateId: string) => void;
   onDeleteAndSwitch: (templateId: string) => void;
   onRemovePendingSession: (sessionId: string) => void;
+  gyms: string[];
   selectedDate: Date;
   setSelectedDate: (date: Date) => void;
 }
@@ -58,6 +59,7 @@ export default function HomePage({
   onFinishAndSwitch,
   onDeleteAndSwitch,
   onRemovePendingSession,
+  gyms,
   selectedDate,
   setSelectedDate,
 }: HomePageProps) {
@@ -89,6 +91,18 @@ export default function HomePage({
     string | null
   >(null);
   const [showPendingPicker, setShowPendingPicker] = useState(false);
+  const [showPlanCalendar, setShowPlanCalendar] = useState(false);
+  const [planDate, setPlanDate] = useState(new Date());
+  const [planTemplateId, setPlanTemplateId] = useState<string>("");
+  const [planHour, setPlanHour] = useState("8");
+  const [planMinute, setPlanMinute] = useState("30");
+  const [planAmPm, setPlanAmPm] = useState("PM");
+  const [planLocation, setPlanLocation] = useState<string>("");
+  const [planShow, setPlanShow] = useState("All Friends");
+  const [showPlanTemplatePicker, setShowPlanTemplatePicker] = useState(false);
+  const [showPlanLocationPicker, setShowPlanLocationPicker] = useState(false);
+  const [showPlanShowPicker, setShowPlanShowPicker] = useState(false);
+  const [showPlanAmPmPicker, setShowPlanAmPmPicker] = useState(false);
 
   useEffect(() => {
     const handleResize = () => {
@@ -102,8 +116,8 @@ export default function HomePage({
 
   const isMobile = windowWidth < 768;
 
-  // Calculate available height: window height minus navbar (~56px), title (~60px), padding
-  const availableHeight = windowHeight - 220;
+  // Match templates page height calculation
+  const availableHeight = windowHeight - 90;
   const selectedDayIndex = (selectedDate.getDay() + 6) % 7;
   const selectedDay = DAYS[selectedDayIndex];
   const selectedTemplateId = schedule[selectedDay];
@@ -454,7 +468,7 @@ export default function HomePage({
                 position: "absolute",
                 top: "100%",
                 left: 0,
-                marginTop: 8,
+                marginTop: 6,
                 background: COLORS.card,
                 border: `1px solid ${COLORS.border}`,
                 borderRadius: 12,
@@ -672,6 +686,7 @@ export default function HomePage({
           flexDirection: isMobile ? "column" : "row",
           gap: 12,
           height: isMobile ? "auto" : availableHeight,
+          overflow: isMobile ? "visible" : "visible",
         }}
       >
         {/* ===== LEFT COLUMN ===== */}
@@ -1617,129 +1632,868 @@ export default function HomePage({
                 }}
               />
             </div>
-            {/* Schedule - fixed height at bottom */}
-            <div style={{ ...cardStyle, flexShrink: 0, padding: "20px 16px" }}>
-              <h3
-                style={{
-                  fontSize: 15,
-                  fontWeight: 600,
-                  margin: "0 0 10px",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 8,
-                  position: "relative",
-                }}
-              >
-                Schedule
-                <span
-                  onClick={() => setShowScheduleInfo(!showScheduleInfo)}
-                  onMouseEnter={() => setShowScheduleInfo(true)}
-                  onMouseLeave={() => setShowScheduleInfo(false)}
-                  style={{
-                    width: 16,
-                    height: 16,
-                    borderRadius: "50%",
-                    border: `1px solid ${COLORS.dim}`,
-                    display: "inline-flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    fontSize: 11,
-                    color: COLORS.dim,
-                    cursor: "pointer",
-                    fontWeight: 400,
-                  }}
-                >
-                  i
-                </span>
-                {showScheduleInfo && (
+            {/* My Sessions */}
+            <div style={{ ...cardStyle, flexShrink: 0, padding: "16px" }}>
+              <h3 style={{ fontSize: 15, fontWeight: 600, margin: "0 0 12px" }}>
+                My Sessions
+              </h3>
+              {(() => {
+                const plannedSessions: any[] = []; // replace with real data later
+                if (plannedSessions.length === 0) {
+                  return (
+                    <p style={{ color: COLORS.dim, fontSize: 13, margin: 0 }}>
+                      No upcoming sessions planned.
+                    </p>
+                  );
+                }
+                return plannedSessions.map((s, i) => (
                   <div
+                    key={i}
                     style={{
-                      position: "absolute",
-                      top: "100%",
-                      left: 0,
-                      marginTop: 4,
-                      background: COLORS.inner,
-                      border: `1px solid ${COLORS.border}`,
-                      borderRadius: 8,
-                      padding: "6px 10px",
-                      fontSize: 12,
-                      fontWeight: 400,
-                      color: COLORS.dim,
-                      whiteSpace: "nowrap",
-                      zIndex: 10,
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      padding: "8px 0",
+                      borderBottom:
+                        i < plannedSessions.length - 1
+                          ? `1px solid ${COLORS.border}`
+                          : "none",
                     }}
                   >
-                    Tap to cycle templates · Long press for dropdown
-                  </div>
-                )}
-              </h3>
-              <div style={{ display: "flex", justifyContent: "space-between" }}>
-                {DAYS.map((day, i) => {
-                  const templateId = schedule[day];
-                  const template = templates.find((t) => t.id === templateId);
-                  const isTodayDay = i === selectedDayIndex;
-                  return (
-                    <div key={day} style={{ textAlign: "center", flex: 1 }}>
-                      <div
-                        style={{
-                          fontSize: 12,
-                          color: isTodayDay ? COLORS.accent : COLORS.text,
-                          fontWeight: isTodayDay ? 700 : 400,
-                          marginBottom: 4,
-                        }}
-                      >
-                        {day.slice(0, 3)}
+                    <div>
+                      <div style={{ fontSize: 14, fontWeight: 600 }}>
+                        {s.template}
                       </div>
-                      <div
-                        onPointerDown={() => handlePointerDown(day)}
-                        onPointerUp={() => handlePointerUp(day)}
-                        onPointerLeave={() => {
-                          handlePointerLeave();
-                          setShowScheduleDayTooltip(null);
-                        }}
-                        onMouseEnter={() => setShowScheduleDayTooltip(day)}
-                        onMouseLeave={() => setShowScheduleDayTooltip(null)}
-                        style={{
-                          fontSize: 11,
-                          color: isTodayDay ? COLORS.accent : COLORS.dim,
-                          background: isTodayDay
-                            ? COLORS.accent + "22"
-                            : COLORS.inner,
-                          borderRadius: 6,
-                          padding: "6px 2px",
-                          cursor: "pointer",
-                          userSelect: "none",
-                          transition: "background 0.15s",
-                          position: "relative",
-                        }}
-                      >
-                        {template ? template.name.replace(" Day", "") : "Rest"}
-                        {showScheduleDayTooltip === day && (
-                          <div
-                            style={{
-                              position: "absolute",
-                              bottom: "100%",
-                              left: "50%",
-                              transform: "translateX(-50%)",
-                              marginBottom: 4,
-                              background: COLORS.inner,
-                              border: `1px solid ${COLORS.border}`,
-                              borderRadius: 8,
-                              padding: "4px 8px",
-                              fontSize: 11,
-                              fontWeight: 400,
-                              color: COLORS.dim,
-                              whiteSpace: "nowrap",
-                              zIndex: 10,
-                            }}
-                          >
-                            Click to change
-                          </div>
-                        )}
+                      <div style={{ fontSize: 12, color: COLORS.dim }}>
+                        {s.date} · {s.time}
                       </div>
                     </div>
-                  );
-                })}
+                    {s.location && (
+                      <div style={{ fontSize: 12, color: COLORS.dim }}>
+                        {s.location}
+                      </div>
+                    )}
+                  </div>
+                ));
+              })()}
+            </div>
+
+            {/* Plan a Group Session */}
+            <div
+              style={{
+                ...cardStyle,
+                flexShrink: 0,
+                padding: "14px 16px",
+                marginTop: 0,
+                position: "relative",
+              }}
+              onClick={() => {
+                showPlanTemplatePicker && setShowPlanTemplatePicker(false);
+                showPlanLocationPicker && setShowPlanLocationPicker(false);
+                showPlanShowPicker && setShowPlanShowPicker(false);
+                showPlanAmPmPicker && setShowPlanAmPmPicker(false);
+                showPlanCalendar && setShowPlanCalendar(false);
+              }}
+            >
+              {/* Header row: title + date trigger + Plan Session button */}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  marginBottom: 10,
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "baseline",
+                    gap: 10,
+                    position: "relative",
+                  }}
+                >
+                  <h3 style={{ fontSize: 15, fontWeight: 600, margin: 0 }}>
+                    Plan a Group Session
+                  </h3>
+                  <span
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowPlanCalendar(!showPlanCalendar);
+                      setShowPlanTemplatePicker(false);
+                      setShowPlanLocationPicker(false);
+                      setShowPlanShowPicker(false);
+                      setShowPlanAmPmPicker(false);
+                    }}
+                    style={{
+                      fontSize: 14,
+                      color: COLORS.accent,
+                      fontWeight: 600,
+                      cursor: "pointer",
+                      userSelect: "none",
+                    }}
+                  >
+                    {(() => {
+                      const day = planDate.getDate();
+                      const suffix =
+                        day % 10 === 1 && day !== 11
+                          ? "st"
+                          : day % 10 === 2 && day !== 12
+                            ? "nd"
+                            : day % 10 === 3 && day !== 13
+                              ? "rd"
+                              : "th";
+                      const weekday = planDate.toLocaleDateString("en-US", {
+                        weekday: "short",
+                      });
+                      const month = planDate.toLocaleDateString("en-US", {
+                        month: "short",
+                      });
+                      return `${weekday}, ${month} ${day}${suffix}, ${planDate.getFullYear()}`;
+                    })()}{" "}
+                    <span style={{ fontSize: 11, color: COLORS.dim }}>▼</span>
+                  </span>
+                  {/* Calendar — opens to the right of the date text */}
+                  {showPlanCalendar &&
+                    (() => {
+                      const calYear = planDate.getFullYear();
+                      const calMonth = planDate.getMonth();
+                      const monthStart = new Date(calYear, calMonth, 1);
+                      const gridStart = new Date(monthStart);
+                      gridStart.setDate(
+                        monthStart.getDate() - ((monthStart.getDay() + 6) % 7),
+                      );
+                      const monthName = planDate.toLocaleDateString("en-US", {
+                        month: "long",
+                        year: "numeric",
+                      });
+                      const calDays: Date[] = [];
+                      const cur = new Date(gridStart);
+                      for (let i = 0; i < 42; i++) {
+                        calDays.push(new Date(cur));
+                        cur.setDate(cur.getDate() + 1);
+                      }
+                      const toStr = (d: Date) =>
+                        `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+                      const planStr = toStr(planDate);
+                      return (
+                        <div
+                          onClick={(e) => e.stopPropagation()}
+                          style={{
+                            position: "absolute",
+                            top: 0,
+                            left: "100%",
+                            marginLeft: 8,
+                            background: COLORS.card,
+                            border: `1px solid ${COLORS.border}`,
+                            borderRadius: 12,
+                            padding: 12,
+                            zIndex: 1000,
+                            width: 260,
+                            boxShadow: "0 4px 24px rgba(0,0,0,0.4)",
+                          }}
+                        >
+                          <div
+                            style={{
+                              display: "flex",
+                              justifyContent: "space-between",
+                              alignItems: "center",
+                              marginBottom: 8,
+                            }}
+                          >
+                            <button
+                              onClick={() => {
+                                const d = new Date(planDate);
+                                d.setMonth(d.getMonth() - 1);
+                                setPlanDate(d);
+                              }}
+                              style={{
+                                background: "none",
+                                border: "none",
+                                color: COLORS.accent,
+                                cursor: "pointer",
+                                fontSize: 16,
+                                padding: "2px 6px",
+                              }}
+                            >
+                              ◀
+                            </button>
+                            <span style={{ fontSize: 14, fontWeight: 600 }}>
+                              {monthName}
+                            </span>
+                            <button
+                              onClick={() => {
+                                const d = new Date(planDate);
+                                d.setMonth(d.getMonth() + 1);
+                                setPlanDate(d);
+                              }}
+                              style={{
+                                background: "none",
+                                border: "none",
+                                color: COLORS.accent,
+                                cursor: "pointer",
+                                fontSize: 16,
+                                padding: "2px 6px",
+                              }}
+                            >
+                              ▶
+                            </button>
+                          </div>
+                          <div
+                            style={{
+                              display: "grid",
+                              gridTemplateColumns: "repeat(7, 1fr)",
+                              gap: 2,
+                              marginBottom: 4,
+                            }}
+                          >
+                            {["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"].map(
+                              (d) => (
+                                <div
+                                  key={d}
+                                  style={{
+                                    textAlign: "center",
+                                    fontSize: 11,
+                                    color: COLORS.dim,
+                                    fontWeight: 600,
+                                    padding: 2,
+                                  }}
+                                >
+                                  {d}
+                                </div>
+                              ),
+                            )}
+                          </div>
+                          <div
+                            style={{
+                              display: "grid",
+                              gridTemplateColumns: "repeat(7, 1fr)",
+                              gap: 2,
+                            }}
+                          >
+                            {calDays.map((d, i) => {
+                              const ds = toStr(d);
+                              const isSel = ds === planStr;
+                              const isCurMon = d.getMonth() === calMonth;
+                              const isTdy = ds === todayLocal;
+                              return (
+                                <button
+                                  key={i}
+                                  onClick={() => {
+                                    const nd = new Date(d);
+                                    nd.setHours(12);
+                                    setPlanDate(nd);
+                                    setShowPlanCalendar(false);
+                                  }}
+                                  style={{
+                                    width: 32,
+                                    height: 32,
+                                    borderRadius: 6,
+                                    border: isTdy
+                                      ? `2px solid ${COLORS.accent}`
+                                      : "none",
+                                    background: isSel
+                                      ? COLORS.accent
+                                      : "transparent",
+                                    color: isSel
+                                      ? COLORS.text
+                                      : !isCurMon
+                                        ? COLORS.border
+                                        : COLORS.text,
+                                    cursor: "pointer",
+                                    fontSize: 12,
+                                    fontWeight: isSel ? 700 : 400,
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    margin: "0 auto",
+                                  }}
+                                >
+                                  {d.getDate()}
+                                </button>
+                              );
+                            })}
+                          </div>
+                          <button
+                            onClick={() => {
+                              setPlanDate(new Date());
+                              setShowPlanCalendar(false);
+                            }}
+                            style={{
+                              width: "100%",
+                              marginTop: 8,
+                              padding: "6px",
+                              borderRadius: 8,
+                              border: `1px solid ${COLORS.border}`,
+                              background: COLORS.inner,
+                              color: COLORS.accent,
+                              cursor: "pointer",
+                              fontSize: 12,
+                              fontWeight: 600,
+                            }}
+                          >
+                            Today
+                          </button>
+                        </div>
+                      );
+                    })()}
+                </div>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                  }}
+                  style={{
+                    padding: "6px 14px",
+                    borderRadius: 8,
+                    border: "none",
+                    background: COLORS.accent,
+                    color: COLORS.text,
+                    cursor: "pointer",
+                    fontWeight: 700,
+                    fontSize: 13,
+                    flexShrink: 0,
+                  }}
+                >
+                  Plan Session
+                </button>
+              </div>
+
+              {/* Form fields */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {/* Template */}
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <span
+                    style={{
+                      fontSize: 14,
+                      color: COLORS.dim,
+                      width: 90,
+                      flexShrink: 0,
+                    }}
+                  >
+                    Template:
+                  </span>
+                  <div style={{ flex: 1, position: "relative" }}>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setShowPlanTemplatePicker(!showPlanTemplatePicker);
+                        setShowPlanLocationPicker(false);
+                        setShowPlanShowPicker(false);
+                        setShowPlanAmPmPicker(false);
+                        setShowPlanCalendar(false);
+                      }}
+                      style={{
+                        width: "100%",
+                        padding: "5px 10px",
+                        borderRadius: 8,
+                        border: `1px solid ${COLORS.border}`,
+                        background: COLORS.inner,
+                        color: COLORS.text,
+                        fontSize: 13,
+                        cursor: "pointer",
+                        textAlign: "left",
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                      }}
+                    >
+                      <span>
+                        {templates.find((t) => t.id === planTemplateId)?.name ||
+                          templates[0]?.name ||
+                          "Select template"}
+                      </span>
+                      <span style={{ color: COLORS.dim, fontSize: 11 }}>▼</span>
+                    </button>
+                    {showPlanTemplatePicker && (
+                      <div
+                        onClick={(e) => e.stopPropagation()}
+                        style={{
+                          position: "absolute",
+                          bottom: "100%",
+                          left: 0,
+                          right: 0,
+                          marginBottom: 4,
+                          background: COLORS.card,
+                          border: `1px solid ${COLORS.border}`,
+                          borderRadius: 10,
+                          padding: 6,
+                          zIndex: 1000,
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: 3,
+                          maxHeight: 200,
+                          overflowY: "auto",
+                          boxShadow: "0 -4px 16px rgba(0,0,0,0.4)",
+                        }}
+                      >
+                        {templates.map((t) => {
+                          const isCur =
+                            (planTemplateId || templates[0]?.id) === t.id;
+                          return (
+                            <button
+                              key={t.id}
+                              onClick={() => {
+                                setPlanTemplateId(t.id);
+                                setShowPlanTemplatePicker(false);
+                              }}
+                              style={{
+                                padding: "7px 10px",
+                                borderRadius: 7,
+                                border: isCur
+                                  ? `2px solid ${COLORS.accent}`
+                                  : `1px solid ${COLORS.border}`,
+                                background: isCur
+                                  ? COLORS.accent + "22"
+                                  : COLORS.inner,
+                                color: isCur ? COLORS.accent : COLORS.text,
+                                cursor: "pointer",
+                                fontSize: 13,
+                                fontWeight: isCur ? 600 : 400,
+                                textAlign: "left",
+                              }}
+                            >
+                              {t.name}
+                              {isCur && " ✓"}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Start Time */}
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <span
+                    style={{
+                      fontSize: 14,
+                      color: COLORS.dim,
+                      width: 90,
+                      flexShrink: 0,
+                    }}
+                  >
+                    Start Time:
+                  </span>
+                  <div
+                    style={{
+                      flex: 1,
+                      display: "flex",
+                      gap: 6,
+                      alignItems: "center",
+                    }}
+                  >
+                    <input
+                      type="number"
+                      min={1}
+                      max={12}
+                      value={planHour}
+                      onChange={(e) => {
+                        const v = e.target.value.replace(/\D/g, "");
+                        setPlanHour(v);
+                      }}
+                      style={{
+                        width: 52,
+                        padding: "5px 8px",
+                        borderRadius: 8,
+                        border: `1px solid ${COLORS.border}`,
+                        background: COLORS.inner,
+                        color: COLORS.text,
+                        fontSize: 13,
+                        textAlign: "center",
+                      }}
+                    />
+                    <span style={{ color: COLORS.dim, fontSize: 14 }}>:</span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={59}
+                      value={planMinute}
+                      onChange={(e) => {
+                        const v = e.target.value.replace(/\D/g, "");
+                        setPlanMinute(v.slice(0, 2));
+                      }}
+                      style={{
+                        width: 52,
+                        padding: "5px 8px",
+                        borderRadius: 8,
+                        border: `1px solid ${COLORS.border}`,
+                        background: COLORS.inner,
+                        color: COLORS.text,
+                        fontSize: 13,
+                        textAlign: "center",
+                      }}
+                    />
+                    <div style={{ position: "relative" }}>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setShowPlanAmPmPicker(!showPlanAmPmPicker);
+                          setShowPlanTemplatePicker(false);
+                          setShowPlanLocationPicker(false);
+                          setShowPlanShowPicker(false);
+                          setShowPlanCalendar(false);
+                        }}
+                        style={{
+                          padding: "5px 10px",
+                          borderRadius: 8,
+                          border: `1px solid ${COLORS.border}`,
+                          background: COLORS.inner,
+                          color: COLORS.text,
+                          fontSize: 13,
+                          cursor: "pointer",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 4,
+                        }}
+                      >
+                        {planAmPm}{" "}
+                        <span style={{ color: COLORS.dim, fontSize: 11 }}>
+                          ▼
+                        </span>
+                      </button>
+                      {showPlanAmPmPicker && (
+                        <div
+                          onClick={(e) => e.stopPropagation()}
+                          style={{
+                            position: "absolute",
+                            top: 0,
+                            left: "100%",
+                            marginLeft: 4,
+                            background: COLORS.bg,
+                            border: "none",
+                            borderRadius: 10,
+                            padding: 6,
+                            zIndex: 1000,
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: 3,
+                          }}
+                        >
+                          {["AM", "PM"]
+                            .filter((v) => v !== planAmPm)
+                            .map((v) => (
+                              <button
+                                key={v}
+                                onClick={() => {
+                                  setPlanAmPm(v);
+                                  setShowPlanAmPmPicker(false);
+                                }}
+                                style={{
+                                  padding: "6px 16px",
+                                  borderRadius: 7,
+                                  border:
+                                    planAmPm === v
+                                      ? `2px solid ${COLORS.accent}`
+                                      : `1px solid ${COLORS.border}`,
+                                  background:
+                                    planAmPm === v
+                                      ? COLORS.accent + "22"
+                                      : COLORS.inner,
+                                  color:
+                                    planAmPm === v
+                                      ? COLORS.accent
+                                      : COLORS.text,
+                                  cursor: "pointer",
+                                  fontSize: 13,
+                                  fontWeight: planAmPm === v ? 600 : 400,
+                                }}
+                              >
+                                {v}
+                                {planAmPm === v && " ✓"}
+                              </button>
+                            ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Location */}
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <span
+                    style={{
+                      fontSize: 14,
+                      color: COLORS.dim,
+                      width: 90,
+                      flexShrink: 0,
+                    }}
+                  >
+                    Location:
+                  </span>
+                  <div style={{ flex: 1, position: "relative" }}>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setShowPlanLocationPicker(!showPlanLocationPicker);
+                        setShowPlanTemplatePicker(false);
+                        setShowPlanShowPicker(false);
+                        setShowPlanAmPmPicker(false);
+                        setShowPlanCalendar(false);
+                      }}
+                      style={{
+                        width: "100%",
+                        padding: "5px 10px",
+                        borderRadius: 8,
+                        border: `1px solid ${COLORS.border}`,
+                        background: COLORS.inner,
+                        color: planLocation ? COLORS.text : COLORS.dim,
+                        fontSize: 13,
+                        cursor: "pointer",
+                        textAlign: "left",
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        gap: 6,
+                      }}
+                    >
+                      <span
+                        style={{
+                          overflow: "hidden",
+                          whiteSpace: "nowrap",
+                          maskImage:
+                            "linear-gradient(to right, black calc(100% - 20px), transparent 100%)",
+                          WebkitMaskImage:
+                            "linear-gradient(to right, black calc(100% - 20px), transparent 100%)",
+                        }}
+                      >
+                        {planLocation || "Select gym"}
+                      </span>
+                      <span
+                        style={{
+                          color: COLORS.dim,
+                          fontSize: 11,
+                          flexShrink: 0,
+                        }}
+                      >
+                        ▼
+                      </span>
+                    </button>
+                    {showPlanLocationPicker && (
+                      <div
+                        onClick={(e) => e.stopPropagation()}
+                        style={{
+                          position: "absolute",
+                          bottom: "100%",
+                          left: 0,
+                          right: 0,
+                          marginBottom: 4,
+                          background: COLORS.card,
+                          border: `1px solid ${COLORS.border}`,
+                          borderRadius: 10,
+                          padding: 6,
+                          zIndex: 1000,
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: 3,
+                          maxHeight: 200,
+                          overflowY: "auto",
+                          boxShadow: "0 -4px 16px rgba(0,0,0,0.4)",
+                        }}
+                      >
+                        {(gyms.filter((g) => g.trim()).length > 0
+                          ? gyms.filter((g) => g.trim())
+                          : ["No gyms saved — add them in Profile"]
+                        ).map((g, i) => {
+                          const parts = g.split(" — ");
+                          const gymName = parts[0];
+                          const address = parts.slice(1).join(" — ");
+                          const isSelectable =
+                            gyms.filter((g) => g.trim()).length > 0;
+                          const isCur = planLocation === g;
+                          return (
+                            <button
+                              key={i}
+                              onClick={() => {
+                                if (isSelectable) {
+                                  setPlanLocation(g);
+                                  setShowPlanLocationPicker(false);
+                                }
+                              }}
+                              style={{
+                                padding: "7px 10px",
+                                borderRadius: 7,
+                                border: isCur
+                                  ? `2px solid ${COLORS.accent}`
+                                  : `1px solid ${COLORS.border}`,
+                                background: isCur
+                                  ? COLORS.accent + "22"
+                                  : COLORS.inner,
+                                color: isCur
+                                  ? COLORS.accent
+                                  : isSelectable
+                                    ? COLORS.text
+                                    : COLORS.dim,
+                                cursor: isSelectable ? "pointer" : "default",
+                                fontSize: 13,
+                                fontWeight: isCur ? 600 : 400,
+                                textAlign: "left",
+                              }}
+                            >
+                              <div
+                                style={{
+                                  overflow: "hidden",
+                                  whiteSpace: "nowrap",
+                                  maskImage:
+                                    "linear-gradient(to right, black calc(100% - 16px), transparent 100%)",
+                                  WebkitMaskImage:
+                                    "linear-gradient(to right, black calc(100% - 16px), transparent 100%)",
+                                }}
+                              >
+                                {gymName}
+                                {isCur && " ✓"}
+                              </div>
+                              {address && (
+                                <div
+                                  style={{
+                                    fontSize: 11,
+                                    color: COLORS.dim,
+                                    overflow: "hidden",
+                                    whiteSpace: "nowrap",
+                                    maskImage:
+                                      "linear-gradient(to right, black calc(100% - 16px), transparent 100%)",
+                                    WebkitMaskImage:
+                                      "linear-gradient(to right, black calc(100% - 16px), transparent 100%)",
+                                  }}
+                                >
+                                  {address}
+                                </div>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Show */}
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <span
+                    style={{
+                      fontSize: 14,
+                      color: COLORS.dim,
+                      width: 90,
+                      flexShrink: 0,
+                    }}
+                  >
+                    Show:
+                  </span>
+                  <div style={{ flex: 1, position: "relative" }}>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setShowPlanShowPicker(!showPlanShowPicker);
+                        setShowPlanTemplatePicker(false);
+                        setShowPlanLocationPicker(false);
+                        setShowPlanAmPmPicker(false);
+                        setShowPlanCalendar(false);
+                      }}
+                      style={{
+                        width: "100%",
+                        padding: "5px 10px",
+                        borderRadius: 8,
+                        border: `1px solid ${COLORS.border}`,
+                        background: COLORS.inner,
+                        color: COLORS.text,
+                        fontSize: 13,
+                        cursor: "pointer",
+                        textAlign: "left",
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                      }}
+                    >
+                      <span>{planShow}</span>
+                      <span style={{ color: COLORS.dim, fontSize: 11 }}>▼</span>
+                    </button>
+                    {showPlanShowPicker && (
+                      <div
+                        onClick={(e) => e.stopPropagation()}
+                        style={{
+                          position: "absolute",
+                          bottom: "100%",
+                          left: 0,
+                          right: 0,
+                          marginBottom: 4,
+                          background: COLORS.card,
+                          border: `1px solid ${COLORS.border}`,
+                          borderRadius: 10,
+                          padding: 6,
+                          zIndex: 1000,
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: 3,
+                          boxShadow: "0 -4px 16px rgba(0,0,0,0.4)",
+                        }}
+                      >
+                        {["All Friends", "Nobody"].map((v) => (
+                          <button
+                            key={v}
+                            onClick={() => {
+                              setPlanShow(v);
+                              setShowPlanShowPicker(false);
+                            }}
+                            style={{
+                              padding: "7px 10px",
+                              borderRadius: 7,
+                              border:
+                                planShow === v
+                                  ? `2px solid ${COLORS.accent}`
+                                  : `1px solid ${COLORS.border}`,
+                              background:
+                                planShow === v
+                                  ? COLORS.accent + "22"
+                                  : COLORS.inner,
+                              color:
+                                planShow === v ? COLORS.accent : COLORS.text,
+                              cursor: "pointer",
+                              fontSize: 13,
+                              fontWeight: planShow === v ? 600 : 400,
+                              textAlign: "left",
+                            }}
+                          >
+                            {v}
+                            {planShow === v && " ✓"}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Invite */}
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <span
+                    style={{
+                      fontSize: 14,
+                      color: COLORS.dim,
+                      width: 90,
+                      flexShrink: 0,
+                    }}
+                  >
+                    Invite:
+                  </span>
+                  <div style={{ flex: 1 }}>
+                    <button
+                      style={{
+                        width: "100%",
+                        padding: "5px 10px",
+                        borderRadius: 8,
+                        border: `1px solid ${COLORS.border}`,
+                        background: COLORS.inner,
+                        color: COLORS.dim,
+                        fontSize: 13,
+                        cursor: "default",
+                        textAlign: "left",
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                      }}
+                    >
+                      <span>— select friend —</span>
+                      <span style={{ color: COLORS.dim, fontSize: 11 }}>▼</span>
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -1749,10 +2503,11 @@ export default function HomePage({
         {(!isMobile || mobileTab === "weekly") && (
           <div
             style={{
-              flex: 1, // How flexible the right column is, because the flex of right is equal to left they both take 50% of the space, if we set flex: 2 it will take 66% and left will take 33%
+              flex: 1,
               display: "flex",
               flexDirection: "column",
               minHeight: 530,
+              overflow: isMobile ? "visible" : "hidden",
             }}
           >
             <div
@@ -2096,7 +2851,7 @@ export default function HomePage({
                       gridTemplateColumns: "60px 1fr 10px",
                       gap: "0 12px",
                       alignItems: "center",
-                      padding: "6px 16px",
+                      padding: "3px 16px",
                       borderRadius: 8,
                       background: isSelected
                         ? COLORS.accent + "11"
@@ -2104,7 +2859,7 @@ export default function HomePage({
                       border: isSelected
                         ? `1px solid ${COLORS.accent}33`
                         : "1px solid transparent",
-                      marginBottom: 2,
+                      marginBottom: 1,
                     }}
                   >
                     <div>
@@ -2129,6 +2884,72 @@ export default function HomePage({
                         gap: "6px 12px",
                       }}
                     >
+                      {(() => {
+                        const overrideId = dayOverrides[date];
+                        const dayOfWeek =
+                          DAYS[(new Date(date + "T12:00:00").getDay() + 6) % 7];
+                        const scheduledId = overrideId || schedule[dayOfWeek];
+                        const scheduledTemplate = templates.find(
+                          (t) => t.id === scheduledId,
+                        );
+                        const workoutsOnDay = history.filter(
+                          (w) => w.date === date,
+                        );
+                        const workoutDoneToday = workoutsOnDay.length > 0;
+                        const workoutName =
+                          workoutsOnDay.length > 0
+                            ? workoutsOnDay[workoutsOnDay.length - 1].name
+                            : scheduledTemplate?.name;
+                        if (!workoutName || workoutName === "Rest") return null;
+                        return (
+                          <div
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 4,
+                              cursor: "default",
+                              userSelect: "none",
+                              minWidth: 0,
+                              opacity: isSelected ? 1 : 0.5,
+                            }}
+                          >
+                            <div
+                              style={{
+                                width: 16,
+                                height: 16,
+                                minWidth: 16,
+                                borderRadius: 3,
+                                border: `2px solid ${workoutDoneToday ? COLORS.green : COLORS.border}`,
+                                background: workoutDoneToday
+                                  ? COLORS.green
+                                  : "transparent",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                fontSize: 10,
+                                color: COLORS.bg,
+                                transition: "all 0.15s",
+                              }}
+                            >
+                              {workoutDoneToday && "✓"}
+                            </div>
+                            <span
+                              style={{
+                                fontSize: 14,
+                                color: workoutDoneToday
+                                  ? COLORS.text
+                                  : COLORS.dim,
+                                overflow: "hidden",
+                                whiteSpace: "nowrap",
+                                minWidth: 0,
+                                textOverflow: "ellipsis",
+                              }}
+                            >
+                              {workoutName}
+                            </span>
+                          </div>
+                        );
+                      })()}
                       {activeTasks.map((task) => {
                         const checked = dayCompletions[task.index] || false;
                         return (
@@ -2244,25 +3065,14 @@ export default function HomePage({
                             ▼
                           </button>
                         </>
-                      ) : (
-                        <div
-                          style={{
-                            fontSize: 12,
-                            color: workoutDone ? COLORS.green : COLORS.dim,
-                            textAlign: "center",
-                            whiteSpace: "nowrap",
-                          }}
-                        >
-                          {workoutDone && "✓"}
-                        </div>
-                      )}
+                      ) : null}
                     </div>
                   </div>
                 );
               })}
             </div>
 
-            {/* Heatmap - bottom of right column */}
+            {/* Schedule - bottom of right column */}
             <div
               style={{
                 ...cardStyle,
@@ -2271,183 +3081,127 @@ export default function HomePage({
                 marginTop: 12,
               }}
             >
-              <div
+              <h3
                 style={{
-                  fontSize: 18,
-                  color: COLORS.text,
-                  marginBottom: 12,
+                  fontSize: 15,
                   fontWeight: 600,
+                  margin: "0 0 10px",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  position: "relative",
                 }}
               >
-                {today.split("-")[0]} Activity
-              </div>
-              <div style={{ width: "100%" }}>
-                {(() => {
-                  const CELL = 11; // px per cell
-                  const GAP = 2; // px gap
-                  const fullGrid = getFullYearGrid();
-                  const totalWeeks = Math.ceil(fullGrid.length / 7);
-                  const allRows = Array.from({ length: 7 }, (_, row) =>
-                    Array.from(
-                      { length: totalWeeks },
-                      (_, col) => fullGrid[col * 7 + row] ?? null,
-                    ),
-                  );
-
-                  // Calculate how many weeks fit in the container
-                  const labelWidth = 28;
-                  const containerWidth =
-                    (typeof window !== "undefined"
-                      ? window.innerWidth * 0.45
-                      : 400) -
-                    32 -
-                    labelWidth;
-                  const visibleWeeks = Math.floor(
-                    (containerWidth + GAP) / (CELL + GAP),
-                  );
-
-                  // Find which column today falls in
-                  const todayStr = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}-${String(new Date().getDate()).padStart(2, "0")}`;
-                  let todayCol = totalWeeks - 1;
-                  for (let col = 0; col < totalWeeks; col++) {
-                    for (let row = 0; row < 7; row++) {
-                      if (allRows[row][col]?.date === todayStr) { todayCol = col; break; }
-                    }
-                  }
-                  // Anchor window so today's column is the last visible column
-                  const colOffset = Math.max(0, todayCol - visibleWeeks + 1);
-                  const rows = allRows.map((row) =>
-                    row.slice(colOffset, colOffset + visibleWeeks),
-                  );
-                  const grid = fullGrid; // keep reference for monthCols calc
-                  const DOW_LABELS = ["Sun", "", "Tue", "", "Thu", "", "Sat"];
-                  const monthCols: { label: string; col: number }[] = [];
-                  HEATMAP_MONTHS.forEach((m, mi) => {
-                    for (let col = 0; col < visibleWeeks; col++) {
-                      const cell = rows[0][col] || rows[1][col] || rows[2][col];
-                      if (cell) {
-                        const d = new Date(cell.date + "T12:00:00");
-                        if (d.getMonth() === mi && d.getDate() <= 7) {
-                          monthCols.push({ label: m, col });
-                          break;
-                        }
-                      }
-                    }
-                  });
-                  return (
-                    <div style={{ width: "100%" }}>
-                      {/* Month labels row */}
-                      <div
-                        style={{
-                          display: "flex",
-                          marginLeft: 28,
-                          marginBottom: 3,
-                        }}
-                      >
-                        {Array.from({ length: visibleWeeks }, (_, col) => {
-                          const month = monthCols.find((mc) => mc.col === col);
-                          return (
-                            <div
-                              key={col}
-                              style={{
-                                flex: 1,
-                                fontSize: 9,
-                                color: COLORS.text,
-                                overflow: "visible",
-                                whiteSpace: "nowrap",
-                              }}
-                            >
-                              {month ? month.label : ""}
-                            </div>
-                          );
-                        })}
-                      </div>
-                      {/* Day rows */}
-                      {Array.from({ length: 7 }, (_, row) => (
-                        <div
-                          key={row}
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            marginBottom: 2,
-                          }}
-                        >
-                          <div
-                            style={{
-                              width: 24,
-                              fontSize: 9,
-                              color: COLORS.text,
-                              textAlign: "right",
-                              paddingRight: 4,
-                              flexShrink: 0,
-                            }}
-                          >
-                            {DOW_LABELS[row]}
-                          </div>
-                          {Array.from({ length: visibleWeeks }, (_, col) => {
-                            const cell = rows[row][col];
-                            const isEmpty = !cell;
-                            const color = cell?.gym
-                              ? getWorkoutColor(cell.date)
-                              : null;
-                            return (
-                              <div
-                                key={col}
-                                title={cell?.gym ? cell.date : ""}
-                                style={{
-                                  width: CELL,
-                                  height: CELL,
-                                  flexShrink: 0,
-                                  borderRadius: 2,
-                                  background: isEmpty
-                                    ? "transparent"
-                                    : color || COLORS.inner,
-                                  border: isEmpty
-                                    ? "none"
-                                    : `1px solid ${COLORS.border}`,
-                                  marginRight: GAP,
-                                }}
-                              />
-                            );
-                          })}
-                        </div>
-                      ))}
-                    </div>
-                  );
-                })()}
-                <div
+                Schedule
+                <span
+                  onClick={() => setShowScheduleInfo(!showScheduleInfo)}
+                  onMouseEnter={() => setShowScheduleInfo(true)}
+                  onMouseLeave={() => setShowScheduleInfo(false)}
                   style={{
-                    display: "flex",
-                    gap: 12,
-                    marginTop: 8,
+                    width: 16,
+                    height: 16,
+                    borderRadius: "50%",
+                    border: `1px solid ${COLORS.dim}`,
+                    display: "inline-flex",
                     alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: 11,
+                    color: COLORS.dim,
+                    cursor: "pointer",
+                    fontWeight: 400,
                   }}
                 >
-                  {[
-                    { color: "#162d4a", label: "Much worse" },
-                    { color: "#1e3a5f", label: "Worse" },
-                    { color: "#1d4ed8", label: "Better" },
-                    { color: "#2563eb", label: "Much better" },
-                  ].map(({ color, label }) => (
-                    <div
-                      key={label}
-                      style={{ display: "flex", alignItems: "center", gap: 4 }}
-                    >
+                  i
+                </span>
+                {showScheduleInfo && (
+                  <div
+                    style={{
+                      position: "absolute",
+                      top: "100%",
+                      left: 0,
+                      marginTop: 4,
+                      background: COLORS.inner,
+                      border: `1px solid ${COLORS.border}`,
+                      borderRadius: 8,
+                      padding: "6px 10px",
+                      fontSize: 12,
+                      fontWeight: 400,
+                      color: COLORS.dim,
+                      whiteSpace: "nowrap",
+                      zIndex: 10,
+                    }}
+                  >
+                    Tap to cycle templates · Long press for dropdown
+                  </div>
+                )}
+              </h3>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                {DAYS.map((day, i) => {
+                  const templateId = schedule[day];
+                  const template = templates.find((t) => t.id === templateId);
+                  const isTodayDay = i === selectedDayIndex;
+                  return (
+                    <div key={day} style={{ textAlign: "center", flex: 1 }}>
                       <div
                         style={{
-                          width: 10,
-                          height: 10,
-                          borderRadius: 2,
-                          background: color,
-                          border: `1px solid ${COLORS.border}`,
+                          fontSize: 12,
+                          color: isTodayDay ? COLORS.accent : COLORS.text,
+                          fontWeight: isTodayDay ? 700 : 400,
+                          marginBottom: 4,
                         }}
-                      />
-                      <span style={{ fontSize: 10, color: COLORS.dim }}>
-                        {label}
-                      </span>
+                      >
+                        {day.slice(0, 3)}
+                      </div>
+                      <div
+                        onPointerDown={() => handlePointerDown(day)}
+                        onPointerUp={() => handlePointerUp(day)}
+                        onPointerLeave={() => {
+                          handlePointerLeave();
+                          setShowScheduleDayTooltip(null);
+                        }}
+                        onMouseEnter={() => setShowScheduleDayTooltip(day)}
+                        onMouseLeave={() => setShowScheduleDayTooltip(null)}
+                        style={{
+                          fontSize: 11,
+                          color: isTodayDay ? COLORS.accent : COLORS.dim,
+                          background: isTodayDay
+                            ? COLORS.accent + "22"
+                            : COLORS.inner,
+                          borderRadius: 6,
+                          padding: "6px 2px",
+                          cursor: "pointer",
+                          userSelect: "none",
+                          transition: "background 0.15s",
+                          position: "relative",
+                        }}
+                      >
+                        {template ? template.name.replace(" Day", "") : "Rest"}
+                        {showScheduleDayTooltip === day && (
+                          <div
+                            style={{
+                              position: "absolute",
+                              bottom: "100%",
+                              left: "50%",
+                              transform: "translateX(-50%)",
+                              marginBottom: 4,
+                              background: COLORS.inner,
+                              border: `1px solid ${COLORS.border}`,
+                              borderRadius: 8,
+                              padding: "4px 8px",
+                              fontSize: 11,
+                              fontWeight: 400,
+                              color: COLORS.dim,
+                              whiteSpace: "nowrap",
+                              zIndex: 10,
+                            }}
+                          >
+                            Click to change
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  ))}
-                </div>
+                  );
+                })}
               </div>
             </div>
           </div>

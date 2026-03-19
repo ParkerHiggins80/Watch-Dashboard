@@ -68,6 +68,7 @@ export default function App() {
     bio: "",
     gym: "",
     secondaryGym: "",
+    gyms: [] as string[],
     photo: null as string | null,
     joinedDate: new Date().toLocaleDateString("en-US", {
       month: "numeric",
@@ -799,11 +800,48 @@ export default function App() {
     ).catch(() => {});
   };
 
-  const cancelWorkout = () => {
-    // Remove the current in-progress session (don't remove completed ones)
+  const saveEdits = async (session: any) => {
+    const cleanExercises = (session.exercises || [])
+      .map((ex: any) => ({
+        ...ex,
+        sets: (ex.sets || []).filter(
+          (s: any) =>
+            !isNaN(Number(s.weight)) &&
+            !isNaN(Number(s.reps)) &&
+            Number(s.weight) > 0 &&
+            Number(s.reps) > 0,
+        ),
+      }))
+      .filter((ex: any) => ex.sets.length > 0);
+    const { _templates, _exercises, _workoutGroups, ...sessionClean } = session;
+    const workout = {
+      ...sessionClean,
+      exercises: cleanExercises,
+      _editing: false,
+      _completed: false,
+    };
+    const newHistory = history.map((w: any) =>
+      w.id === workout.id ? workout : w,
+    );
+    setHistory(newHistory.sort((a, b) => a.date.localeCompare(b.date)));
+    if (user) {
+      setDoc(doc(db, "users", user.uid, "workouts", workout.id), workout).catch(() => {});
+    }
+    // Remove the editing session from activeSessions entirely
     const updated = activeSessions.filter((_, i) => i !== activeSessionIndex);
     setActiveSessions(updated);
     setActiveSessionIndex(Math.max(0, updated.length - 1));
+    if (session.date) setSelectedDate(new Date(session.date + "T12:00:00"));
+    setCurrentPage("home");
+  };
+
+  const cancelWorkout = () => {
+    const session = activeSessions[activeSessionIndex];
+    // If cancelling an edit, just remove from activeSessions — don't touch history
+    const updated = activeSessions.filter((_, i) => i !== activeSessionIndex);
+    setActiveSessions(updated);
+    setActiveSessionIndex(Math.max(0, updated.length - 1));
+    if (session?.date) setSelectedDate(new Date(session.date + "T12:00:00"));
     setCurrentPage("home");
   };
 
@@ -856,6 +894,7 @@ export default function App() {
           onFinish={finishWorkout}
           onSaveAndReturn={() => saveAndReturnHome(currentSession?.date)}
           onCancel={cancelWorkout}
+          onSaveEdits={saveEdits}
           onDeleteWorkout={deleteWorkout}
           history={history}
         />
@@ -927,6 +966,7 @@ export default function App() {
             }}
             onFinishAndSwitch={finishAndSwitch}
             onDeleteAndSwitch={deleteAndSwitch}
+            gyms={profileData.gyms ?? []}
             selectedDate={selectedDate}
             setSelectedDate={setSelectedDate}
           />
@@ -994,9 +1034,8 @@ export default function App() {
       <Navbar currentPage={currentPage} onNavigate={setCurrentPage} />
       <div
         style={{
-          padding: "0 20px",
-          marginLeft:
-            currentPage === "session" ? 0 : windowWidth >= 768 ? 60 : 0,
+          padding: "16px 20px",
+          marginLeft: currentPage === "session" ? 0 : 60,
           height: "100vh",
           overflowY:
             currentPage === "profile" || currentPage === "friends"
@@ -1004,54 +1043,7 @@ export default function App() {
               : "hidden",
         }}
       >
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            marginBottom: 8,
-          }}
-        >
-          <div style={{ fontSize: 15, color: COLORS.dim }}>
-            {currentPage === "session"
-              ? `${user.email}/home/log`
-              : `${(profileData as any).username || user.email}/${currentPage}`}
-          </div>
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <button
-              onClick={() => signOut(auth)}
-              style={{
-                background: "transparent",
-                border: `1px solid ${COLORS.border}`,
-                borderRadius: 8,
-                padding: "6px 12px",
-                color: COLORS.dim,
-                cursor: "pointer",
-                fontSize: 12,
-              }}
-            >
-              Sign out
-            </button>
-            <button
-              onClick={() => {}}
-              style={{
-                background: COLORS.card,
-                border: `1px solid ${COLORS.border}`,
-                borderRadius: 8,
-                width: 36,
-                height: 36,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                cursor: "pointer",
-                color: COLORS.dim,
-                fontSize: 18,
-              }}
-            >
-              ⚙
-            </button>
-          </div>
-        </div>
+        
         {renderPage()}
       </div>
     </div>
